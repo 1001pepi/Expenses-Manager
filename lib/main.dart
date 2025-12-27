@@ -4,50 +4,107 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class ThemeProvider extends ChangeNotifier {
+  ThemeMode _themeMode = ThemeMode.light;
+
+  ThemeMode get themeMode => _themeMode;
+
+  void toggleTheme() {
+    _themeMode = _themeMode == ThemeMode.light
+        ? ThemeMode.dark
+        : ThemeMode.light;
+    notifyListeners();
+  }
+
+  void setTheme(ThemeMode mode) {
+    _themeMode = mode;
+    notifyListeners();
+  }
+}
+
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final ThemeProvider _themeProvider = ThemeProvider();
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+    return AnimatedBuilder(
+      animation: _themeProvider,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Expenses Manager',
+          theme: _buildLightTheme(),
+          darkTheme: _buildDarkTheme(),
+          themeMode: _themeProvider.themeMode,
+          home: MyHomePage(
+            title: 'Expenses Manager',
+            themeProvider: _themeProvider,
+          ),
+        );
+      },
+    );
+  }
+
+  ThemeData _buildLightTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      colorScheme: const ColorScheme.light(
+        primary: Color(0xFF14B8A6), // Teal
+        secondary: Color(0xFF84CC16), // Lime Green
+        tertiary: Color(0xFFFBBF24), // Amber
+        surface: Color(0xFFFDFDFD), // Off-White
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
+        onTertiary: Colors.white,
+        onSurface: Color(0xFF111827), // Dark Gray
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      scaffoldBackgroundColor: const Color(0xFFFDFDFD),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF14B8A6),
+        foregroundColor: Colors.white,
+      ),
+    );
+  }
+
+  ThemeData _buildDarkTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: const ColorScheme.dark(
+        primary: Color(0xFF0D7879), // Teal
+        secondary: Color(0xFF65A30D), // Lime Green
+        tertiary: Color(0xFFD97706), // Amber
+        surface: Color(0xFF1F2937), // Dark Gray
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
+        onTertiary: Colors.white,
+        onSurface: Color(0xFFE5E7EB), // Light Gray
+      ),
+      scaffoldBackgroundColor: const Color(0xFF1F2937),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF0D7879),
+        foregroundColor: Colors.white,
+      ),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
+  const MyHomePage({
+    super.key,
+    required this.title,
+    required this.themeProvider,
+  });
 
   final String title;
+  final ThemeProvider themeProvider;
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -77,15 +134,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // than having to individually change instances of widgets.
     return Scaffold(
       drawer: _buildConfigDrawer(context),
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
+      appBar: AppBar(title: Text(widget.title)),
       body: Center(
         // Center is a layout widget. It takes a single child and positions it
         // in the middle of the parent.
@@ -136,8 +185,14 @@ class _MyHomePageState extends State<MyHomePage> {
             ListTile(
               leading: const Icon(Icons.palette_outlined),
               title: const Text('Theme'),
+              trailing: Switch(
+                value: widget.themeProvider.themeMode == ThemeMode.dark,
+                onChanged: (value) {
+                  widget.themeProvider.toggleTheme();
+                },
+              ),
               onTap: () {
-                Navigator.of(context).pop();
+                widget.themeProvider.toggleTheme();
               },
             ),
             ListTile(
