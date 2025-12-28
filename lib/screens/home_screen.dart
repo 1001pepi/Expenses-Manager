@@ -20,14 +20,16 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   late Map<String, DateTime> _periodDates;
   DateTimeRange? _customPeriodRange;
   String _selectedTab = 'Day';
+  late TabController _mainTabController;
 
   @override
   void initState() {
     super.initState();
+    _mainTabController = TabController(length: 2, vsync: this);
     final today = DateTime.now();
     _periodDates = {
       'Day': today,
@@ -37,6 +39,12 @@ class _MyHomePageState extends State<MyHomePage> {
       'Period': today,
     };
     _customPeriodRange = null;
+  }
+
+  @override
+  void dispose() {
+    _mainTabController.dispose();
+    super.dispose();
   }
 
   void _updatePeriod(String tabName, int offset) {
@@ -107,22 +115,60 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       drawer: _buildConfigDrawer(context),
       appBar: AppBar(title: Text(widget.title)),
-      body: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Container(
-          decoration: BoxDecoration(
+      body: Column(
+        children: [
+          // Main tabs (Budget/Expenses) with TabBar
+          Material(
             color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+            child: TabBar(
+              controller: _mainTabController,
+              labelColor: Theme.of(context).colorScheme.primary,
+              unselectedLabelColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withOpacity(0.75),
+              indicatorColor: Theme.of(context).colorScheme.primary,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: 'Budget'),
+                Tab(text: 'Expenses'),
+              ],
             ),
           ),
-          child: Column(
-            children: [
-              _buildCustomMenu(context, tabNames),
-              Expanded(child: _buildTabContent(context, _selectedTab)),
-            ],
+          Expanded(
+            child: TabBarView(
+              controller: _mainTabController,
+              children: [
+                _buildMainTabContent(context, tabNames, 'Budget'),
+                _buildMainTabContent(context, tabNames, 'Expenses'),
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainTabContent(
+    BuildContext context,
+    List<String> tabNames,
+    String mainTab,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+          ),
+        ),
+        child: Column(
+          children: [
+            _buildCustomMenu(context, tabNames),
+            Expanded(child: _buildTabContent(context, _selectedTab, mainTab)),
+          ],
         ),
       ),
     );
@@ -250,7 +296,11 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget _buildTabContent(BuildContext context, String tabName) {
+  Widget _buildTabContent(
+    BuildContext context,
+    String tabName,
+    String mainTab,
+  ) {
     final periodDate = _periodDates[tabName] ?? DateTime.now();
     final periodRange = _customPeriodRange;
     String periodText;
@@ -357,7 +407,7 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
               child: Center(
                 child: Text(
-                  '$tabName Previsions',
+                  '$mainTab $tabName Previsions',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -382,7 +432,7 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
               child: Center(
                 child: Text(
-                  '$tabName Expenses',
+                  '$mainTab $tabName Expenses',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
