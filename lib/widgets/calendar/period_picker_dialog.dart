@@ -25,6 +25,7 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
   late DateTime _displayedMonth;
   DateTime? _startDate;
   DateTime? _endDate;
+  bool _isAllTime = false;
 
   @override
   void initState() {
@@ -43,6 +44,13 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
       fontWeight: FontWeight.w500,
       color: Theme.of(context).colorScheme.onSurface,
     );
+
+    if (_isAllTime) {
+      return TextSpan(
+        text: 'All time',
+        style: baseStyle.copyWith(color: primary, fontWeight: FontWeight.w700),
+      );
+    }
 
     if (_startDate == null) {
       return TextSpan(text: 'Select start date', style: baseStyle);
@@ -96,6 +104,7 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
     setState(() {
       _startDate = null;
       _endDate = null;
+      _isAllTime = false;
       _displayedMonth = DateTime.now();
     });
   }
@@ -121,6 +130,20 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                   const SizedBox(height: 12),
                   Text.rich(_rangeSpan()),
                   const SizedBox(height: 8),
+                  // All time checkbox
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _isAllTime,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            _isAllTime = value ?? false;
+                          });
+                        },
+                      ),
+                      const Text('All time'),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   // Month selector with navigation arrows
                   Row(
@@ -128,16 +151,18 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.arrow_left),
-                        onPressed: () {
-                          setState(() {
-                            final prevMonth = _displayedMonth.month - 1;
-                            final year = prevMonth < 1
-                                ? _displayedMonth.year - 1
-                                : _displayedMonth.year;
-                            final month = prevMonth < 1 ? 12 : prevMonth;
-                            _displayedMonth = DateTime(year, month, 1);
-                          });
-                        },
+                        onPressed: _isAllTime
+                            ? null
+                            : () {
+                                setState(() {
+                                  final prevMonth = _displayedMonth.month - 1;
+                                  final year = prevMonth < 1
+                                      ? _displayedMonth.year - 1
+                                      : _displayedMonth.year;
+                                  final month = prevMonth < 1 ? 12 : prevMonth;
+                                  _displayedMonth = DateTime(year, month, 1);
+                                });
+                              },
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         iconSize: 20,
@@ -145,17 +170,19 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                       // Month dropdown
                       DropdownButton2<int>(
                         value: _displayedMonth.month,
-                        onChanged: (int? newMonth) {
-                          if (newMonth != null) {
-                            setState(() {
-                              _displayedMonth = DateTime(
-                                _displayedMonth.year,
-                                newMonth,
-                                1,
-                              );
-                            });
-                          }
-                        },
+                        onChanged: _isAllTime
+                            ? null
+                            : (int? newMonth) {
+                                if (newMonth != null) {
+                                  setState(() {
+                                    _displayedMonth = DateTime(
+                                      _displayedMonth.year,
+                                      newMonth,
+                                      1,
+                                    );
+                                  });
+                                }
+                              },
                         items: List.generate(12, (index) => index + 1)
                             .map(
                               (month) => DropdownMenuItem(
@@ -175,17 +202,19 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                       // Year dropdown
                       DropdownButton2<int>(
                         value: _displayedMonth.year,
-                        onChanged: (int? newYear) {
-                          if (newYear != null) {
-                            setState(() {
-                              _displayedMonth = DateTime(
-                                newYear,
-                                _displayedMonth.month,
-                                1,
-                              );
-                            });
-                          }
-                        },
+                        onChanged: _isAllTime
+                            ? null
+                            : (int? newYear) {
+                                if (newYear != null) {
+                                  setState(() {
+                                    _displayedMonth = DateTime(
+                                      newYear,
+                                      _displayedMonth.month,
+                                      1,
+                                    );
+                                  });
+                                }
+                              },
                         items: _generateYearList()
                             .map(
                               (year) => DropdownMenuItem(
@@ -203,16 +232,18 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.arrow_right),
-                        onPressed: () {
-                          setState(() {
-                            final nextMonth = _displayedMonth.month + 1;
-                            final year = nextMonth > 12
-                                ? _displayedMonth.year + 1
-                                : _displayedMonth.year;
-                            final month = nextMonth > 12 ? 1 : nextMonth;
-                            _displayedMonth = DateTime(year, month, 1);
-                          });
-                        },
+                        onPressed: _isAllTime
+                            ? null
+                            : () {
+                                setState(() {
+                                  final nextMonth = _displayedMonth.month + 1;
+                                  final year = nextMonth > 12
+                                      ? _displayedMonth.year + 1
+                                      : _displayedMonth.year;
+                                  final month = nextMonth > 12 ? 1 : nextMonth;
+                                  _displayedMonth = DateTime(year, month, 1);
+                                });
+                              },
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -247,12 +278,26 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: (_startDate != null && _endDate != null)
+                    onPressed:
+                        (_isAllTime || (_startDate != null && _endDate != null))
                         ? () {
-                            Navigator.pop(
-                              context,
-                              DateTimeRange(start: _startDate!, end: _endDate!),
-                            );
+                            if (_isAllTime) {
+                              Navigator.pop(
+                                context,
+                                DateTimeRange(
+                                  start: widget.firstDate,
+                                  end: widget.lastDate,
+                                ),
+                              );
+                            } else {
+                              Navigator.pop(
+                                context,
+                                DateTimeRange(
+                                  start: _startDate!,
+                                  end: _endDate!,
+                                ),
+                              );
+                            }
                           }
                         : null,
                     style: ElevatedButton.styleFrom(

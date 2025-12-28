@@ -29,7 +29,11 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _mainTabController = TabController(length: 2, vsync: this);
+    _mainTabController = TabController(
+      length: 2,
+      vsync: this,
+      animationDuration: Duration.zero,
+    );
     final today = DateTime.now();
     _periodDates = {
       'Day': today,
@@ -138,6 +142,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           Expanded(
             child: TabBarView(
               controller: _mainTabController,
+              physics: const NeverScrollableScrollPhysics(),
               children: [
                 _buildMainTabContent(context, tabNames, 'Budget'),
                 _buildMainTabContent(context, tabNames, 'Expenses'),
@@ -145,6 +150,15 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
             ),
           ),
         ],
+      ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 16.0, right: 16.0),
+        child: FloatingActionButton(
+          onPressed: () {
+            // TODO: Add functionality based on current tab
+          },
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -306,11 +320,16 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     String periodText;
 
     if (tabName == 'Period' && periodRange != null) {
-      periodText = DateFormatUtils.getPeriodText(
-        tabName,
-        periodDate,
-        customRange: periodRange,
-      );
+      // Check if it's an "All time" range
+      if (periodRange.start.year == 2000 && periodRange.end.year >= 2100) {
+        periodText = 'All time';
+      } else {
+        periodText = DateFormatUtils.getPeriodText(
+          tabName,
+          periodDate,
+          customRange: periodRange,
+        );
+      }
     } else if (tabName == 'Period') {
       periodText = 'Select a period';
     } else {
