@@ -23,7 +23,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   late Map<String, DateTime> _periodDates;
   DateTimeRange? _customPeriodRange;
-  TabController? _tabController;
+  String _selectedTab = 'Day';
 
   @override
   void initState() {
@@ -78,6 +78,28 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  void _resetToCurrentPeriod(String tabName) {
+    setState(() {
+      final now = DateTime.now();
+      switch (tabName) {
+        case 'Day':
+          _periodDates[tabName] = now;
+          break;
+        case 'Week':
+          _periodDates[tabName] = now;
+          break;
+        case 'Month':
+          _periodDates[tabName] = now;
+          break;
+        case 'Year':
+          _periodDates[tabName] = now;
+          break;
+        case 'Period':
+          break;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     const tabNames = ['Day', 'Week', 'Month', 'Year', 'Period'];
@@ -87,78 +109,90 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(title: Text(widget.title)),
       body: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: DefaultTabController(
-          length: 5,
-          animationDuration: Duration.zero,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-              ),
-            ),
-            child: Column(
-              children: [
-                Builder(
-                  builder: (tabContext) {
-                    _tabController = DefaultTabController.of(tabContext);
-
-                    return TabBar(
-                      labelColor: Theme.of(context).colorScheme.primary,
-                      unselectedLabelColor: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.7),
-                      dividerColor: Colors.transparent,
-                      labelPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 0,
-                      ),
-                      indicatorPadding: const EdgeInsets.only(bottom: 0),
-                      indicatorColor: Theme.of(context).colorScheme.primary,
-                      onTap: (int index) async {
-                        if (_tabController == null) return;
-
-                        final tabName = tabNames[index];
-                        if (tabName == 'Period') {
-                          // If a period is already selected, allow normal tab switch.
-                          if (_customPeriodRange != null) {
-                            return;
-                          }
-
-                          // No period selected yet: keep current tab and show picker.
-                          final currentTabIndex = _tabController!.index;
-                          _tabController!.index = currentTabIndex;
-
-                          final picked = await _showDateRangePicker(
-                            context,
-                            tabName,
-                            _customPeriodRange,
-                          );
-
-                          // Switch to Period tab only when user confirms selection.
-                          if (picked && mounted && _tabController != null) {
-                            _tabController!.index = index;
-                          }
-                          return;
-                        }
-                      },
-                      tabs: tabNames.map((name) => Tab(text: name)).toList(),
-                    );
-                  },
-                ),
-                Expanded(
-                  child: TabBarView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: tabNames
-                        .map((name) => _buildTabContent(context, name))
-                        .toList(),
-                  ),
-                ),
-              ],
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
             ),
           ),
+          child: Column(
+            children: [
+              _buildCustomMenu(context, tabNames),
+              Expanded(child: _buildTabContent(context, _selectedTab)),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCustomMenu(BuildContext context, List<String> tabNames) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      child: Row(
+        children: tabNames.map((name) {
+          final isSelected = _selectedTab == name;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  backgroundColor: isSelected
+                      ? theme.colorScheme.primary.withOpacity(0.12)
+                      : Colors.transparent,
+                  foregroundColor: isSelected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.75),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : Colors.transparent,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onPressed: () async {
+                  if (name == 'Period') {
+                    // If no period selected, keep current tab and show picker.
+                    if (_customPeriodRange == null) {
+                      final currentTab = _selectedTab;
+                      final picked = await _showDateRangePicker(
+                        context,
+                        name,
+                        _customPeriodRange,
+                      );
+                      if (picked && mounted) {
+                        setState(() => _selectedTab = 'Period');
+                      } else if (mounted) {
+                        setState(() => _selectedTab = currentTab);
+                      }
+                      return;
+                    }
+
+                    // If period already selected, just switch.
+                    if (mounted) {
+                      setState(() => _selectedTab = 'Period');
+                    }
+                    return;
+                  }
+
+                  if (mounted) {
+                    setState(() => _selectedTab = name);
+                  }
+                },
+                child: Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -283,6 +317,18 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 if (showNavigation)
                   IconButton(
+                    icon: const Icon(Icons.double_arrow),
+                    onPressed: () {
+                      _resetToCurrentPeriod(tabName);
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    iconSize: 20,
+                  )
+                else
+                  const SizedBox(width: 32, height: 32),
+                if (showNavigation)
+                  IconButton(
                     icon: const Icon(Icons.arrow_right),
                     onPressed: () {
                       _updatePeriod(tabName, 1);
@@ -345,50 +391,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPeriodPlaceholder(BuildContext context, String label) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: () async {
-              final picked = await _showDateRangePicker(
-                context,
-                'Period',
-                _customPeriodRange,
-              );
-              // On cancel, do nothing; remain on placeholder safely.
-              if (picked && mounted) {
-                // Use post frame callback to safely update tab after dialog closes
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _tabController != null) {
-                    // Navigate to Period tab after successful pick.
-                    final periodIndex = 4; // 'Period' position in tabNames
-                    if (periodIndex >= 0 &&
-                        periodIndex < _tabController!.length) {
-                      _tabController!.index = periodIndex;
-                    }
-                  }
-                });
-              }
-            },
-            child: const Text('Choose a period'),
           ),
         ],
       ),

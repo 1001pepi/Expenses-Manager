@@ -36,13 +36,68 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
         : DateTime.now();
   }
 
-  String _formatRange() {
+  InlineSpan _rangeSpan() {
+    final primary = Theme.of(context).colorScheme.primary;
+    final baseStyle = TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      color: Theme.of(context).colorScheme.onSurface,
+    );
+
     if (_startDate == null) {
-      return 'Select start date';
-    } else if (_endDate == null) {
-      return '${_startDate!.day} ${_getMonthAbbr(_startDate!.month)} ${_startDate!.year} - Select end date';
+      return TextSpan(text: 'Select start date', style: baseStyle);
     }
-    return '${_startDate!.day} ${_getMonthAbbr(_startDate!.month)} ${_startDate!.year} - ${_endDate!.day} ${_getMonthAbbr(_endDate!.month)} ${_endDate!.year}';
+
+    final startText =
+        '${_startDate!.day} ${_getMonthAbbr(_startDate!.month)} ${_startDate!.year}';
+
+    if (_endDate == null) {
+      return TextSpan(
+        children: [
+          TextSpan(
+            text: startText,
+            style: baseStyle.copyWith(
+              color: primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          TextSpan(text: ' - '),
+          TextSpan(text: 'Select end date', style: baseStyle),
+        ],
+        style: baseStyle,
+      );
+    }
+
+    final endText =
+        '${_endDate!.day} ${_getMonthAbbr(_endDate!.month)} ${_endDate!.year}';
+    return TextSpan(
+      children: [
+        TextSpan(
+          text: startText,
+          style: baseStyle.copyWith(
+            color: primary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        TextSpan(text: ' - ', style: baseStyle),
+        TextSpan(
+          text: endText,
+          style: baseStyle.copyWith(
+            color: primary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+      style: baseStyle,
+    );
+  }
+
+  void _resetSelection() {
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _displayedMonth = DateTime.now();
+    });
   }
 
   @override
@@ -64,61 +119,8 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    _formatRange(),
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
+                  Text.rich(_rangeSpan()),
                   const SizedBox(height: 8),
-                  if (_startDate != null && _endDate == null)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Selecting end date',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withOpacity(0.6),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _startDate = null;
-                              _endDate = null;
-                            });
-                          },
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            minimumSize: const Size(0, 0),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text(
-                            'Reset',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (_startDate == null)
-                    Text(
-                      'Tap a date to start',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
                   const SizedBox(height: 8),
                   // Month selector with navigation arrows
                   Row(
@@ -141,110 +143,62 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                         iconSize: 20,
                       ),
                       // Month dropdown
-                      SizedBox(
-                        width: 120,
-                        child: DropdownButton2<int>(
-                          value: _displayedMonth.month,
-                          onChanged: (int? newMonth) {
-                            if (newMonth != null) {
-                              setState(() {
-                                _displayedMonth = DateTime(
-                                  _displayedMonth.year,
-                                  newMonth,
-                                  1,
-                                );
-                              });
-                            }
-                          },
-                          items: List.generate(12, (index) => index + 1)
-                              .map(
-                                (month) => DropdownMenuItem(
-                                  value: month,
-                                  child: Text(_getMonthName(month)),
-                                ),
-                              )
-                              .toList(),
-                          buttonStyleData: ButtonStyleData(
-                            height: 36,
-                            width: 120,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.3),
+                      DropdownButton2<int>(
+                        value: _displayedMonth.month,
+                        onChanged: (int? newMonth) {
+                          if (newMonth != null) {
+                            setState(() {
+                              _displayedMonth = DateTime(
+                                _displayedMonth.year,
+                                newMonth,
+                                1,
+                              );
+                            });
+                          }
+                        },
+                        items: List.generate(12, (index) => index + 1)
+                            .map(
+                              (month) => DropdownMenuItem(
+                                value: month,
+                                child: Text(_getMonthName(month)),
                               ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          dropdownStyleData: DropdownStyleData(
-                            maxHeight: 200,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              color: Theme.of(context).colorScheme.surface,
-                            ),
-                            isOverButton: false,
-                          ),
-                          underline: const SizedBox.shrink(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                          isExpanded: true,
+                            )
+                            .toList(),
+                        dropdownStyleData: DropdownStyleData(
+                          maxHeight: 200,
+                          isOverButton: false,
+                          offset: const Offset(0, 5),
+                          width: 120,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 4),
                       // Year dropdown
-                      SizedBox(
-                        width: 80,
-                        child: DropdownButton2<int>(
-                          value: _displayedMonth.year,
-                          onChanged: (int? newYear) {
-                            if (newYear != null) {
-                              setState(() {
-                                _displayedMonth = DateTime(
-                                  newYear,
-                                  _displayedMonth.month,
-                                  1,
-                                );
-                              });
-                            }
-                          },
-                          items: _generateYearList()
-                              .map(
-                                (year) => DropdownMenuItem(
-                                  value: year,
-                                  child: Text(year.toString()),
-                                ),
-                              )
-                              .toList(),
-                          buttonStyleData: ButtonStyleData(
-                            height: 36,
-                            width: 80,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.3),
+                      DropdownButton2<int>(
+                        value: _displayedMonth.year,
+                        onChanged: (int? newYear) {
+                          if (newYear != null) {
+                            setState(() {
+                              _displayedMonth = DateTime(
+                                newYear,
+                                _displayedMonth.month,
+                                1,
+                              );
+                            });
+                          }
+                        },
+                        items: _generateYearList()
+                            .map(
+                              (year) => DropdownMenuItem(
+                                value: year,
+                                child: Text(year.toString()),
                               ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          dropdownStyleData: DropdownStyleData(
-                            maxHeight: 200,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              color: Theme.of(context).colorScheme.surface,
-                            ),
-                            isOverButton: false,
-                          ),
-                          underline: const SizedBox.shrink(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                          isExpanded: true,
+                            )
+                            .toList(),
+                        dropdownStyleData: DropdownStyleData(
+                          maxHeight: 200,
+                          isOverButton: false,
+                          offset: const Offset(0, 5),
+                          width: 90,
                         ),
                       ),
                       IconButton(
@@ -261,7 +215,6 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
                         },
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        iconSize: 20,
                       ),
                     ],
                   ),
@@ -273,8 +226,16 @@ class _PeriodPickerDialogState extends State<PeriodPickerDialog> {
             Padding(
               padding: const EdgeInsets.only(right: 16.0, bottom: 16.0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _resetSelection,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                    ),
+                    child: const Text('Discard'),
+                  ),
+                  const SizedBox(width: 8),
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context, null);
