@@ -61,8 +61,10 @@ class DateFormatUtils {
             date.month == now.month &&
             date.year == now.year) {
           return 'Today, ${formatDate(date)}';
-        } else {
+        } else if (date.year == now.year) {
           return formatDate(date);
+        } else {
+          return formatFullDate(date);
         }
       case 'Week':
         final firstDayOfWeek = date.subtract(Duration(days: date.weekday - 1));

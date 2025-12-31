@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'theme/theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
+import 'database/database_helper.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseHelper.instance.ensureDefaultAccount();
   runApp(const MyApp());
 }
 

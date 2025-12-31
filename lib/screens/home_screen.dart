@@ -5,6 +5,10 @@ import '../widgets/calendar/week_picker_dialog.dart';
 import '../widgets/calendar/month_picker_dialog.dart';
 import '../widgets/calendar/period_picker_dialog.dart';
 import '../utils/date_format_utils.dart';
+import 'add_financial_item_screen.dart';
+import 'accounts_screen.dart';
+import 'settings_screen.dart';
+import 'category_screen.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({
@@ -118,7 +122,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
     return Scaffold(
       drawer: _buildConfigDrawer(context),
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(title: Text(widget.title), centerTitle: true),
       body: Column(
         children: [
           // Main tabs (Budget/Expenses) with TabBar
@@ -155,7 +159,18 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         padding: const EdgeInsets.only(bottom: 16.0, right: 16.0),
         child: FloatingActionButton(
           onPressed: () {
-            // TODO: Add functionality based on current tab
+            Navigator.push(
+              context,
+              PageRouteBuilder(
+                transitionDuration: Duration.zero,
+                reverseTransitionDuration: Duration.zero,
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    AddFinancialItemScreen(
+                      initialTabIndex: _mainTabController.index,
+                      themeProvider: widget.themeProvider,
+                    ),
+              ),
+            );
           },
           child: const Icon(Icons.add),
         ),
@@ -265,28 +280,60 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           children: [
             const DrawerHeader(
               child: Text(
-                'Configuration',
+                'Expenses Manager',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Theme'),
-              trailing: Switch(
-                value: widget.themeProvider.themeMode == ThemeMode.dark,
-                onChanged: (value) {
-                  widget.themeProvider.toggleTheme();
-                },
-              ),
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Home'),
               onTap: () {
-                widget.themeProvider.toggleTheme();
+                Navigator.of(context).pop();
               },
             ),
             ListTile(
-              leading: const Icon(Icons.attach_money_outlined),
-              title: const Text('Currency'),
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('Accounts'),
               onTap: () {
-                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: Duration.zero,
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        AccountsScreen(themeProvider: widget.themeProvider),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.category_outlined),
+              title: const Text('Categories'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: Duration.zero,
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        const CategoryScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Settings'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    transitionDuration: Duration.zero,
+                    reverseTransitionDuration: Duration.zero,
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        SettingsScreen(themeProvider: widget.themeProvider),
+                  ),
+                );
               },
             ),
             ListTile(
@@ -346,25 +393,25 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           Container(
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                 width: 1,
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (showNavigation)
                   IconButton(
-                    icon: const Icon(Icons.arrow_left),
+                    icon: const Icon(Icons.chevron_left, weight: 200),
                     onPressed: () {
                       _updatePeriod(tabName, -1);
                     },
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    iconSize: 20,
+                    iconSize: 28,
                   )
                 else
                   const SizedBox(width: 32, height: 32),
@@ -375,9 +422,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                       child: Text(
                         periodText,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: Theme.of(context).colorScheme.primary,
+                          letterSpacing: 0.2,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -386,28 +434,30 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 ),
                 if (showNavigation)
                   IconButton(
-                    icon: const Icon(Icons.double_arrow),
-                    onPressed: () {
-                      _resetToCurrentPeriod(tabName);
-                    },
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    iconSize: 20,
-                  )
-                else
-                  const SizedBox(width: 32, height: 32),
-                if (showNavigation)
-                  IconButton(
-                    icon: const Icon(Icons.arrow_right),
+                    icon: const Icon(Icons.chevron_right, weight: 200),
                     onPressed: () {
                       _updatePeriod(tabName, 1);
                     },
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    iconSize: 20,
+                    iconSize: 28,
                   )
                 else
                   const SizedBox(width: 32, height: 32),
+                if (showNavigation)
+                  IconButton(
+                    icon: const Icon(
+                      Icons.keyboard_double_arrow_right,
+                      weight: 200,
+                    ),
+                    onPressed: () {
+                      _resetToCurrentPeriod(tabName);
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    iconSize: 22,
+                    tooltip: 'Today',
+                  ),
               ],
             ),
           ),
