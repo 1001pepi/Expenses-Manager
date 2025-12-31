@@ -48,7 +48,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Delete Account'),
+          title: const Text('Delete Account', style: TextStyle(fontSize: 18)),
           content: Text('Delete the "${widget.account!.name}" account?'),
           actions: [
             TextButton(

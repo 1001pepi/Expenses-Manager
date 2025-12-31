@@ -66,6 +66,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
           }
 
           final categories = snapshot.data ?? [];
+          // Sort categories alphabetically by name
+          categories.sort((a, b) => a.name.compareTo(b.name));
 
           if (categories.isEmpty) {
             return Center(
@@ -83,23 +85,95 @@ class _CategoryScreenState extends State<CategoryScreen> {
             );
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          return GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 24,
+              childAspectRatio: 0.8,
+            ),
+            itemCount: categories.length,
             itemBuilder: (context, index) {
               final category = categories[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Color(category.color).withOpacity(0.15),
-                  child: Icon(
-                    IconData(category.iconCode, fontFamily: 'MaterialIcons'),
-                    color: Color(category.color),
+              final categoryColor = Color(category.color);
+              final categoryIcon = IconData(
+                category.iconCode,
+                fontFamily: 'MaterialIcons',
+              );
+              return GestureDetector(
+                onTap: () async {
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          CreateCategoryScreen(category: category),
+                    ),
+                  );
+                  if (result == true) {
+                    _refreshCategories();
+                  }
+                },
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 160,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: categoryColor.withOpacity(0.15),
+                          border: Border.all(
+                            color: categoryColor.withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            categoryIcon,
+                            size: 38,
+                            color: categoryColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ShaderMask(
+                          shaderCallback: (bounds) {
+                            return LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                Colors.white,
+                                Colors.white.withOpacity(0),
+                              ],
+                              stops: const [0.75, 1.0],
+                            ).createShader(bounds);
+                          },
+                          blendMode: BlendMode.dstIn,
+                          child: Text(
+                            category.name,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                title: Text(category.name),
               );
             },
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemCount: categories.length,
           );
         },
       ),
@@ -107,7 +181,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
         padding: const EdgeInsets.only(bottom: 24.0),
         child: FloatingActionButton(
           onPressed: _openCreateCategory,
-          child: const Icon(Icons.add),
+          elevation: 4,
+          child: const Icon(Icons.add, size: 32),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

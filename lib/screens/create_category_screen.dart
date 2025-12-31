@@ -6,7 +6,9 @@ import '../utils/color_palette.dart';
 import 'icon_catalog_screen.dart';
 
 class CreateCategoryScreen extends StatefulWidget {
-  const CreateCategoryScreen({super.key});
+  final Category? category; // Optional category for editing
+
+  const CreateCategoryScreen({super.key, this.category});
 
   @override
   State<CreateCategoryScreen> createState() => _CreateCategoryScreenState();
@@ -41,35 +43,105 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
   Color _selectedColor = ColorPalette.shared.first;
 
   @override
+  void initState() {
+    super.initState();
+    // If editing, populate the form with category data
+    if (widget.category != null) {
+      _nameController.text = widget.category!.name;
+      _selectedIcon = IconData(
+        widget.category!.iconCode,
+        fontFamily: 'MaterialIcons',
+      );
+      _selectedColor = Color(widget.category!.color);
+    }
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
   }
 
+  void _deleteCategory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Category', style: TextStyle(fontSize: 18)),
+          content: Text('Delete the "${widget.category!.name}" category?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await DatabaseHelper.instance.deleteCategory(widget.category!.id!);
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    }
+  }
+
   void _saveCategory() {
     if (_formKey.currentState!.validate()) {
       setState(() => _isSaving = true);
-      DatabaseHelper.instance
-          .createCategory(
-            Category(
-              name: _nameController.text.trim(),
-              iconCode: _selectedIcon.codePoint,
-              color: _selectedColor.value,
-            ),
-          )
-          .then((_) {
-            Navigator.pop(context, true);
-          })
-          .catchError((error) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to save category: $error')),
-            );
-          })
-          .whenComplete(() {
-            if (mounted) {
-              setState(() => _isSaving = false);
-            }
-          });
+
+      if (widget.category != null) {
+        // Update existing category
+        final updatedCategory = widget.category!.copyWith(
+          name: _nameController.text.trim(),
+          iconCode: _selectedIcon.codePoint,
+          color: _selectedColor.value,
+        );
+        DatabaseHelper.instance
+            .updateCategory(updatedCategory)
+            .then((_) {
+              Navigator.pop(context, true);
+            })
+            .catchError((error) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to update category: $error')),
+              );
+            })
+            .whenComplete(() {
+              if (mounted) {
+                setState(() => _isSaving = false);
+              }
+            });
+      } else {
+        // Create new category
+        DatabaseHelper.instance
+            .createCategory(
+              Category(
+                name: _nameController.text.trim(),
+                iconCode: _selectedIcon.codePoint,
+                color: _selectedColor.value,
+              ),
+            )
+            .then((_) {
+              Navigator.pop(context, true);
+            })
+            .catchError((error) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to save category: $error')),
+              );
+            })
+            .whenComplete(() {
+              if (mounted) {
+                setState(() => _isSaving = false);
+              }
+            });
+      }
     }
   }
 
@@ -81,7 +153,9 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Create Category'),
+        title: Text(
+          widget.category != null ? 'Edit Category' : 'Create Category',
+        ),
         centerTitle: true,
       ),
       body: Form(
@@ -233,7 +307,23 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
                 }).toList(),
               ),
             ),
-            const SizedBox(height: 80),
+            const SizedBox(height: 20),
+            // Delete button - only show when editing
+            if (widget.category != null) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: _deleteCategory,
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text(
+                    'DELETE',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            const SizedBox(height: 24),
             Center(
               child: SizedBox(
                 width: 200,

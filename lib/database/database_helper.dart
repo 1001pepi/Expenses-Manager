@@ -146,6 +146,17 @@ class DatabaseHelper {
     return result.map((map) => Category.fromMap(map)).toList();
   }
 
+  // Update a category
+  Future<int> updateCategory(Category category) async {
+    final db = await database;
+    return db.update(
+      'categories',
+      category.toMap(),
+      where: 'id = ?',
+      whereArgs: [category.id],
+    );
+  }
+
   // Delete a category
   Future<int> deleteCategory(int id) async {
     final db = await database;
