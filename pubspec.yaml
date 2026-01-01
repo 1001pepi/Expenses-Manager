@@ -40,6 +40,7 @@ dependencies:
   path: ^1.9.0
   world_countries: ^3.9.4
   phonecodes: ^0.0.4
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:

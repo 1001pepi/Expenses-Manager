@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:world_countries/world_countries.dart';
 import '../theme/theme_provider.dart';
 import '../models/account.dart';
+import '../models/budget.dart';
 import '../database/database_helper.dart';
+import 'add_budget_form.dart';
+import 'add_expense_form.dart';
+import '../widgets/config_drawer.dart';
 
 class AddFinancialItemScreen extends StatefulWidget {
   final int initialTabIndex;
   final ThemeProvider? themeProvider;
+  final String? selectedTab;
+  final DateTime? periodDate;
+  final DateTimeRange? customPeriodRange;
 
   AddFinancialItemScreen({
     Key? key,
     this.initialTabIndex = 0,
     this.themeProvider,
+    this.selectedTab,
+    this.periodDate,
+    this.customPeriodRange,
   }) : super(key: key);
 
   @override
@@ -22,6 +31,97 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   Account? _selectedAccount;
+  List<dynamic> _categories = [];
+  dynamic _selectedBudgetCategory;
+  dynamic _selectedExpenseCategory;
+  DateTime _selectedBudgetDate = DateTime.now();
+  DateTime _selectedExpenseDate = DateTime.now();
+  DateTime? _budgetStartDate;
+  DateTime? _budgetEndDate;
+  final List<String> _budgetTags = [];
+  final List<String> _expenseTags = [];
+  final Set<String> _budgetSelectedTags = {};
+  final Set<String> _expenseSelectedTags = {};
+  final FocusNode _budgetAmountFocusNode = FocusNode();
+  final FocusNode _expenseAmountFocusNode = FocusNode();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final TextEditingController _budgetAmountController = TextEditingController();
+  final TextEditingController _budgetCommentController =
+      TextEditingController();
+  final TextEditingController _expenseAmountController =
+      TextEditingController();
+  final TextEditingController _expenseCommentController =
+      TextEditingController();
+  bool _isBudgetFormDirty = false;
+  bool _isExpenseFormDirty = false;
+
+  bool get _isFormDirty => _isBudgetFormDirty || _isExpenseFormDirty;
+
+  Map<String, DateTime> _calculatePeriodDates() {
+    final periodDate = widget.periodDate ?? DateTime.now();
+    final tabName = widget.selectedTab ?? 'Day';
+
+    DateTime startDate = periodDate;
+    DateTime endDate = periodDate;
+
+    switch (tabName) {
+      case 'Day':
+        startDate = DateTime(periodDate.year, periodDate.month, periodDate.day);
+        endDate = DateTime(
+          periodDate.year,
+          periodDate.month,
+          periodDate.day,
+          23,
+          59,
+          59,
+        );
+        break;
+      case 'Week':
+        final dayOfWeek = periodDate.weekday;
+        startDate = periodDate.subtract(Duration(days: dayOfWeek - 1));
+        startDate = DateTime(startDate.year, startDate.month, startDate.day);
+        endDate = startDate.add(const Duration(days: 6));
+        endDate = DateTime(
+          endDate.year,
+          endDate.month,
+          endDate.day,
+          23,
+          59,
+          59,
+        );
+        break;
+      case 'Month':
+        startDate = DateTime(periodDate.year, periodDate.month, 1);
+        endDate = DateTime(
+          periodDate.year,
+          periodDate.month + 1,
+          0,
+          23,
+          59,
+          59,
+        );
+        break;
+      case 'Year':
+        startDate = DateTime(periodDate.year, 1, 1);
+        endDate = DateTime(periodDate.year, 12, 31, 23, 59, 59);
+        break;
+      case 'Period':
+        if (widget.customPeriodRange != null) {
+          startDate = widget.customPeriodRange!.start;
+          endDate = DateTime(
+            widget.customPeriodRange!.end.year,
+            widget.customPeriodRange!.end.month,
+            widget.customPeriodRange!.end.day,
+            23,
+            59,
+            59,
+          );
+        }
+        break;
+    }
+
+    return {'start': startDate, 'end': endDate};
+  }
 
   @override
   void initState() {
@@ -32,6 +132,35 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
       initialIndex: widget.initialTabIndex,
       animationDuration: Duration.zero,
     );
+    final periodDates = _calculatePeriodDates();
+    _budgetStartDate = periodDates['start'];
+    _budgetEndDate = periodDates['end'];
+
+    // Add listeners to track form changes
+    _budgetAmountController.addListener(() {
+      if (!_isBudgetFormDirty) {
+        setState(() => _isBudgetFormDirty = true);
+      }
+    });
+
+    _budgetCommentController.addListener(() {
+      if (!_isBudgetFormDirty) {
+        setState(() => _isBudgetFormDirty = true);
+      }
+    });
+
+    _expenseAmountController.addListener(() {
+      if (!_isExpenseFormDirty) {
+        setState(() => _isExpenseFormDirty = true);
+      }
+    });
+
+    _expenseCommentController.addListener(() {
+      if (!_isExpenseFormDirty) {
+        setState(() => _isExpenseFormDirty = true);
+      }
+    });
+
     _loadDefaultAccount();
   }
 
@@ -42,389 +171,304 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
         _selectedAccount = accounts.first; // Load first account as default
       });
     }
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    final categories = await DatabaseHelper.instance.getAllCategories();
+    if (mounted) {
+      setState(() {
+        _categories = categories;
+        // Don't set default categories - let user select them
+      });
+    }
+  }
+
+  Future<void> _refreshCategories() async {
+    final categories = await DatabaseHelper.instance.getAllCategories(
+      forceRefresh: true,
+    );
+    if (mounted) {
+      setState(() {
+        _categories = categories;
+      });
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _budgetAmountFocusNode.dispose();
+    _expenseAmountFocusNode.dispose();
+    _budgetAmountController.dispose();
+    _budgetCommentController.dispose();
+    _expenseAmountController.dispose();
+    _expenseCommentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveBudget() async {
+    if (_selectedAccount == null || _selectedBudgetCategory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an account and category')),
+      );
+      return;
+    }
+
+    if (_budgetAmountController.text.isEmpty ||
+        _budgetStartDate == null ||
+        _budgetEndDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all required fields')),
+      );
+      return;
+    }
+
+    final budget = Budget(
+      accountId: _selectedAccount!.id!,
+      categoryId: _selectedBudgetCategory.id,
+      amount: double.parse(_budgetAmountController.text),
+      startDate: _budgetStartDate!,
+      endDate: _budgetEndDate!,
+      tags: _budgetSelectedTags.join(','),
+      comment: _budgetCommentController.text.isNotEmpty
+          ? _budgetCommentController.text
+          : null,
+      createdAt: DateTime.now(),
+    );
+
+    try {
+      await DatabaseHelper.instance.createBudget(budget);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Budget saved successfully')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving budget: $e')));
+      }
+    }
+  }
+
+  Future<void> _saveExpense() async {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Expense saving not yet implemented')),
+      );
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    if (!_isFormDirty) {
+      return true; // Allow pop if form is not dirty
+    }
+
+    final shouldPop = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard Changes?', style: TextStyle(fontSize: 18)),
+        content: const Text(
+          'You have unsaved changes. Are you sure you want to discard them?',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(fontSize: 18)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Discard', style: TextStyle(fontSize: 18)),
+          ),
+        ],
+      ),
+    );
+
+    return shouldPop ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
+    return PopScope(
+      canPop: !_isFormDirty,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop && _isFormDirty) {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && mounted) {
             Navigator.pop(context);
-          },
+          }
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawerEnableOpenDragGesture: false,
+        drawer: ConfigDrawer(themeProvider: widget.themeProvider),
+        appBar: AppBar(
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                _scaffoldKey.currentState?.openDrawer();
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+          title: const Text('Add Financial Item'),
+          centerTitle: true,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-        title: const Text('Add Financial Item'),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          Material(
-            color: Theme.of(context).colorScheme.surface,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: Theme.of(context).colorScheme.primary,
-              unselectedLabelColor: Theme.of(
-                context,
-              ).colorScheme.onSurface.withOpacity(0.75),
-              indicatorColor: Theme.of(context).colorScheme.primary,
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              tabs: const [
-                Tab(text: 'Budget'),
-                Tab(text: 'Expense'),
-              ],
-            ),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [_buildBudgetForm(), _buildExpenseForm()],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBudgetForm() {
-    final currencyCode =
-        _selectedAccount?.currency ??
-        widget.themeProvider?.defaultCurrency ??
-        'USD';
-    final currency = FiatCurrency.list.firstWhere(
-      (c) => c.code == currencyCode,
-      orElse: () => FiatCurrency.list.first,
-    );
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Amount row with currency icon and calculator
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        border: UnderlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      currency.symbol ?? currencyCode,
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  IconButton(
-                    icon: Icon(
-                      const IconData(0xe121, fontFamily: 'MaterialIcons'),
-                      size: 32,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    onPressed: () {
-                      // TODO: Open calculator
-                    },
-                  ),
+        body: Column(
+          children: [
+            Material(
+              color: Theme.of(context).colorScheme.surface,
+              child: TabBar(
+                controller: _tabController,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                unselectedLabelColor: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withOpacity(0.75),
+                dividerColor: Colors.transparent,
+                tabs: const [
+                  Tab(text: 'Budget'),
+                  Tab(text: 'Expense'),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Account',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              const SizedBox(height: 4),
-              InkWell(
-                onTap: () async {
-                  final accounts = await DatabaseHelper.instance
-                      .getAllAccounts();
-                  if (mounted) {
-                    showDialog(
-                      context: context,
-                      builder: (BuildContext context) {
-                        return AlertDialog(
-                          title: const Text('Select Account'),
-                          contentPadding: const EdgeInsets.fromLTRB(
-                            12,
-                            12,
-                            12,
-                            4,
-                          ),
-                          content: SizedBox(
-                            width: double.maxFinite,
-                            height: 260,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              itemCount: accounts.length,
-                              itemBuilder: (context, index) {
-                                final account = accounts[index];
-                                final isSelected =
-                                    _selectedAccount?.id == account.id;
-                                final currency = FiatCurrency.list.firstWhere(
-                                  (c) => c.code == account.currency,
-                                  orElse: () => FiatCurrency.list.first,
-                                );
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Color(account.color),
-                                    child: Text(
-                                      account.name[0].toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(account.name),
-                                  subtitle: Text(
-                                    '${account.currency} (${currency.symbol ?? ''})',
-                                  ),
-                                  trailing: isSelected
-                                      ? Icon(
-                                          Icons.check_circle,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.primary,
-                                        )
-                                      : null,
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedAccount = account;
-                                    });
-                                    Navigator.pop(context);
-                                  },
-                                );
-                              },
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
-                          ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  AddBudgetForm(
+                    selectedAccount: _selectedAccount,
+                    categories: _categories,
+                    selectedCategory: _selectedBudgetCategory,
+                    selectedDate: _selectedBudgetDate,
+                    startDate: _budgetStartDate,
+                    endDate: _budgetEndDate,
+                    tags: _budgetTags,
+                    selectedTags: _budgetSelectedTags,
+                    defaultCurrency: widget.themeProvider?.defaultCurrency,
+                    themeProvider: widget.themeProvider,
+                    amountFocusNode: _budgetAmountFocusNode,
+                    amountController: _budgetAmountController,
+                    commentController: _budgetCommentController,
+                    onAccountSelected: (account) {
+                      setState(() => _selectedAccount = account);
+                    },
+                    onCategorySelected: (category) {
+                      setState(() {
+                        _selectedBudgetCategory = category;
+                        final categoryExists = _categories.any(
+                          (cat) => cat.id == category.id,
                         );
-                      },
-                    );
-                  }
-                },
-                child: Text(
-                  _selectedAccount?.name ?? 'Select Account',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Category',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 3,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              // TODO: Implement save logic
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-            child: const Text('Save Budget'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpenseForm() {
-    final currencyCode = widget.themeProvider?.defaultCurrency ?? 'USD';
-    final currency = FiatCurrency.list.firstWhere(
-      (c) => c.code == currencyCode,
-      orElse: () => FiatCurrency.list.first,
-    );
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Amount row with currency icon and calculator
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        border: UnderlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      currency.symbol ?? currencyCode,
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  IconButton(
-                    icon: Icon(
-                      const IconData(0xe121, fontFamily: 'MaterialIcons'),
-                      size: 32,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    onPressed: () {
-                      // TODO: Open calculator
+                        if (!categoryExists) {
+                          _categories.insert(0, category);
+                        } else {
+                          // Move existing category to front
+                          _categories.removeWhere(
+                            (cat) => cat.id == category.id,
+                          );
+                          _categories.insert(0, category);
+                        }
+                      });
                     },
+                    onDateSelected: (date) {
+                      setState(() => _selectedBudgetDate = date);
+                    },
+                    onStartDateSelected: (date) {
+                      setState(() => _budgetStartDate = date);
+                    },
+                    onEndDateSelected: (date) {
+                      setState(() => _budgetEndDate = date);
+                    },
+                    onAddTag: (tag) {
+                      setState(() {
+                        if (!_budgetTags.contains(tag)) {
+                          _budgetTags.insert(0, tag);
+                          _budgetSelectedTags.add(tag);
+                        }
+                      });
+                    },
+                    onToggleTag: (tag) {
+                      setState(() {
+                        if (_budgetSelectedTags.contains(tag)) {
+                          _budgetSelectedTags.remove(tag);
+                        } else {
+                          _budgetSelectedTags.add(tag);
+                        }
+                      });
+                    },
+                    onSave: _saveBudget,
+                    onCategoriesChanged: _refreshCategories,
+                  ),
+                  AddExpenseForm(
+                    categories: _categories,
+                    selectedCategory: _selectedExpenseCategory,
+                    selectedDate: _selectedExpenseDate,
+                    tags: _expenseTags,
+                    selectedTags: _expenseSelectedTags,
+                    defaultCurrency: widget.themeProvider?.defaultCurrency,
+                    themeProvider: widget.themeProvider,
+                    amountFocusNode: _expenseAmountFocusNode,
+                    onCategorySelected: (category) {
+                      setState(() {
+                        _selectedExpenseCategory = category;
+                        final categoryExists = _categories.any(
+                          (cat) => cat.id == category.id,
+                        );
+                        if (!categoryExists) {
+                          _categories.insert(0, category);
+                        } else {
+                          // Move existing category to front
+                          _categories.removeWhere(
+                            (cat) => cat.id == category.id,
+                          );
+                          _categories.insert(0, category);
+                        }
+                      });
+                    },
+                    onDateSelected: (date) {
+                      setState(() => _selectedExpenseDate = date);
+                    },
+                    onAddTag: (tag) {
+                      setState(() {
+                        if (!_expenseTags.contains(tag)) {
+                          _expenseTags.insert(0, tag);
+                          _expenseSelectedTags.add(tag);
+                        }
+                      });
+                    },
+                    onToggleTag: (tag) {
+                      setState(() {
+                        if (_expenseSelectedTags.contains(tag)) {
+                          _expenseSelectedTags.remove(tag);
+                        } else {
+                          _expenseSelectedTags.add(tag);
+                        }
+                      });
+                    },
+                    onSave: () {
+                      // TODO: Implement save logic
+                      Navigator.pop(context);
+                    },
+                    onCategoriesChanged: _refreshCategories,
                   ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Expense Name',
-              border: OutlineInputBorder(),
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Category',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Date',
-              border: OutlineInputBorder(),
-            ),
-            readOnly: true,
-            onTap: () async {
-              await showDatePicker(
-                context: context,
-                initialDate: DateTime.now(),
-                firstDate: DateTime(2000),
-                lastDate: DateTime(2100),
-              );
-              // TODO: Handle date selection
-            },
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 3,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              // TODO: Implement save logic
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-            child: const Text('Save Expense'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

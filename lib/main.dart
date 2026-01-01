@@ -7,6 +7,11 @@ import 'database/database_helper.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await DatabaseHelper.instance.ensureDefaultAccount();
+
+  // Preload and cache categories and accounts for smooth UI experience
+  await DatabaseHelper.instance.getAllCategories();
+  await DatabaseHelper.instance.getAllAccounts();
+
   runApp(const MyApp());
 }
 

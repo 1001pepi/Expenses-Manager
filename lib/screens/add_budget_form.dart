@@ -1,0 +1,222 @@
+import '../theme/theme_provider.dart';
+import 'package:flutter/material.dart';
+import '../models/account.dart';
+import '../widgets/forms/amount_input_field.dart';
+import '../widgets/forms/account_selector.dart';
+import '../widgets/forms/category_grid_selector.dart';
+import '../widgets/forms/date_selector.dart';
+import '../widgets/forms/tags_section.dart';
+import '../widgets/forms/comment_field.dart';
+
+class AddBudgetForm extends StatefulWidget {
+  final Account? selectedAccount;
+  final List<dynamic> categories;
+  final dynamic selectedCategory;
+  final DateTime selectedDate;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final ThemeProvider? themeProvider;
+  final List<String> tags;
+  final Set<String> selectedTags;
+  final String? defaultCurrency;
+  final VoidCallback? onCategoriesChanged;
+  final FocusNode? amountFocusNode;
+  final TextEditingController? amountController;
+  final TextEditingController? commentController;
+  final Function(Account) onAccountSelected;
+  final Function(dynamic) onCategorySelected;
+  final Function(DateTime) onDateSelected;
+  final Function(DateTime)? onStartDateSelected;
+  final Function(DateTime)? onEndDateSelected;
+  final Function(String) onAddTag;
+  final Function(String) onToggleTag;
+  final VoidCallback onSave;
+
+  const AddBudgetForm({
+    Key? key,
+    required this.selectedAccount,
+    required this.categories,
+    required this.selectedCategory,
+    required this.selectedDate,
+    this.startDate,
+    this.endDate,
+    this.themeProvider,
+    required this.tags,
+    required this.selectedTags,
+    this.defaultCurrency,
+    this.onCategoriesChanged,
+    this.amountFocusNode,
+    this.amountController,
+    this.commentController,
+    required this.onAccountSelected,
+    required this.onCategorySelected,
+    required this.onDateSelected,
+    this.onStartDateSelected,
+    this.onEndDateSelected,
+    required this.onAddTag,
+    required this.onToggleTag,
+    required this.onSave,
+  }) : super(key: key);
+
+  @override
+  State<AddBudgetForm> createState() => _AddBudgetFormState();
+}
+
+class _AddBudgetFormState extends State<AddBudgetForm> {
+  @override
+  void initState() {
+    super.initState();
+    // Add listener to amount controller for form validation
+    widget.amountController?.addListener(() {
+      setState(() {});
+    });
+  }
+
+  bool get _isFormValid {
+    final amountIsValid =
+        widget.amountController?.text.trim().isNotEmpty ?? false;
+    final categoryIsSelected = widget.selectedCategory != null;
+    return amountIsValid && categoryIsSelected;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currencyCode =
+        widget.selectedAccount?.currency ?? widget.defaultCurrency ?? 'USD';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          RepaintBoundary(
+            child: AmountInputField(
+              currencyCode: currencyCode,
+              focusNode: widget.amountFocusNode,
+              controller: widget.amountController,
+            ),
+          ),
+          const SizedBox(height: 24),
+          RepaintBoundary(
+            child: AccountSelector(
+              selectedAccount: widget.selectedAccount,
+              onAccountSelected: widget.onAccountSelected,
+            ),
+          ),
+          const SizedBox(height: 16),
+          RepaintBoundary(
+            child: CategoryGridSelector(
+              categories: widget.categories,
+              selectedCategory: widget.selectedCategory,
+              onCategorySelected: (category) {
+                widget.onCategorySelected(category);
+                setState(() {});
+              },
+              themeProvider: widget.themeProvider,
+              onCategoriesChanged: widget.onCategoriesChanged,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Start Date',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    RepaintBoundary(
+                      child: DateSelector(
+                        selectedDate: widget.startDate ?? widget.selectedDate,
+                        onDateSelected:
+                            widget.onStartDateSelected ?? widget.onDateSelected,
+                        helpText: 'Start Date',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'End Date',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    RepaintBoundary(
+                      child: DateSelector(
+                        selectedDate: widget.endDate ?? widget.selectedDate,
+                        onDateSelected:
+                            widget.onEndDateSelected ?? widget.onDateSelected,
+                        helpText: 'End Date',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          RepaintBoundary(
+            child: TagsSection(
+              tags: widget.tags,
+              selectedTags: widget.selectedTags,
+              onAddTag: widget.onAddTag,
+              onToggleTag: widget.onToggleTag,
+            ),
+          ),
+          RepaintBoundary(
+            child: CommentField(controller: widget.commentController),
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: SizedBox(
+              width: 200,
+              child: ElevatedButton(
+                onPressed: !_isFormValid ? null : widget.onSave,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  disabledBackgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withOpacity(0.2),
+                  disabledForegroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withOpacity(0.5),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                ),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

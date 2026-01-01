@@ -9,6 +9,10 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
 
+  // Cache for categories and accounts
+  List<Category>? _cachedCategories;
+  List<Account>? _cachedAccounts;
+
   DatabaseHelper._init() {
     // Initialize FFI for desktop platforms
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
@@ -29,7 +33,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -39,6 +43,7 @@ class DatabaseHelper {
     const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
     const textType = 'TEXT NOT NULL';
     const intType = 'INTEGER NOT NULL';
+    const realType = 'REAL NOT NULL';
 
     await db.execute('''
       CREATE TABLE accounts (
@@ -57,6 +62,22 @@ class DatabaseHelper {
         color $intType
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE budgets (
+        id $idType,
+        accountId $intType,
+        categoryId $intType,
+        amount $realType,
+        startDate $textType,
+        endDate $textType,
+        tags $textType,
+        comment TEXT,
+        createdAt $textType,
+        FOREIGN KEY (accountId) REFERENCES accounts (id),
+        FOREIGN KEY (categoryId) REFERENCES categories (id)
+      )
+    ''');
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -71,6 +92,29 @@ class DatabaseHelper {
           name $textType,
           iconCode $intType,
           color $intType
+        )
+      ''');
+    }
+
+    if (oldVersion < 3) {
+      const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+      const realType = 'REAL NOT NULL';
+      const intType = 'INTEGER NOT NULL';
+      const textType = 'TEXT NOT NULL';
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS budgets (
+          id $idType,
+          accountId $intType,
+          categoryId $intType,
+          amount $realType,
+          startDate $textType,
+          endDate $textType,
+          tags $textType,
+          comment TEXT,
+          createdAt $textType,
+          FOREIGN KEY (accountId) REFERENCES accounts (id),
+          FOREIGN KEY (categoryId) REFERENCES categories (id)
         )
       ''');
     }
@@ -94,14 +138,21 @@ class DatabaseHelper {
   Future<Account> createAccount(Account account) async {
     final db = await database;
     final id = await db.insert('accounts', account.toMap());
+    // Invalidate cache
+    _cachedAccounts = null;
     return account.copyWith(id: id);
   }
 
-  // Get all accounts
-  Future<List<Account>> getAllAccounts() async {
+  // Get all accounts (with caching)
+  Future<List<Account>> getAllAccounts({bool forceRefresh = false}) async {
+    if (_cachedAccounts != null && !forceRefresh) {
+      return _cachedAccounts!;
+    }
+
     final db = await database;
     final result = await db.query('accounts', orderBy: 'name ASC');
-    return result.map((map) => Account.fromMap(map)).toList();
+    _cachedAccounts = result.map((map) => Account.fromMap(map)).toList();
+    return _cachedAccounts!;
   }
 
   // Get a single account by id
@@ -118,49 +169,130 @@ class DatabaseHelper {
   // Update an account
   Future<int> updateAccount(Account account) async {
     final db = await database;
-    return db.update(
+    final result = await db.update(
       'accounts',
       account.toMap(),
       where: 'id = ?',
       whereArgs: [account.id],
     );
+    // Invalidate cache
+    _cachedAccounts = null;
+    return result;
   }
 
   // Delete an account
   Future<int> deleteAccount(int id) async {
     final db = await database;
-    return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
+    final result = await db.delete(
+      'accounts',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    // Invalidate cache
+    _cachedAccounts = null;
+    return result;
   }
 
-  // Insert a category
+  // Create a category
   Future<Category> createCategory(Category category) async {
     final db = await database;
     final id = await db.insert('categories', category.toMap());
+    // Invalidate cache
+    _cachedCategories = null;
     return category.copyWith(id: id);
   }
 
-  // Get all categories
-  Future<List<Category>> getAllCategories() async {
+  // Get all categories (with caching)
+  Future<List<Category>> getAllCategories({bool forceRefresh = false}) async {
+    if (_cachedCategories != null && !forceRefresh) {
+      return _cachedCategories!;
+    }
+
     final db = await database;
     final result = await db.query('categories', orderBy: 'name ASC');
-    return result.map((map) => Category.fromMap(map)).toList();
+    _cachedCategories = result.map((map) => Category.fromMap(map)).toList();
+    return _cachedCategories!;
   }
 
   // Update a category
   Future<int> updateCategory(Category category) async {
     final db = await database;
-    return db.update(
+    final result = await db.update(
       'categories',
       category.toMap(),
       where: 'id = ?',
       whereArgs: [category.id],
     );
+    // Invalidate cache
+    _cachedCategories = null;
+    return result;
   }
 
   // Delete a category
   Future<int> deleteCategory(int id) async {
     final db = await database;
-    return await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+    final result = await db.delete(
+      'categories',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    // Invalidate cache
+    _cachedCategories = null;
+    return result;
+  }
+
+  // Create a budget
+  Future<int> createBudget(dynamic budget) async {
+    final db = await database;
+    return await db.insert('budgets', budget.toMap());
+  }
+
+  // Get all budgets
+  Future<List<dynamic>> getAllBudgets() async {
+    final db = await database;
+    final result = await db.query('budgets', orderBy: 'createdAt DESC');
+    return result;
+  }
+
+  // Get budgets by account
+  Future<List<dynamic>> getBudgetsByAccount(int accountId) async {
+    final db = await database;
+    final result = await db.query(
+      'budgets',
+      where: 'accountId = ?',
+      whereArgs: [accountId],
+      orderBy: 'createdAt DESC',
+    );
+    return result;
+  }
+
+  // Get budgets by category
+  Future<List<dynamic>> getBudgetsByCategory(int categoryId) async {
+    final db = await database;
+    final result = await db.query(
+      'budgets',
+      where: 'categoryId = ?',
+      whereArgs: [categoryId],
+      orderBy: 'createdAt DESC',
+    );
+    return result;
+  }
+
+  // Update a budget
+  Future<int> updateBudget(dynamic budget) async {
+    final db = await database;
+    return await db.update(
+      'budgets',
+      budget.toMap(),
+      where: 'id = ?',
+      whereArgs: [budget.id],
+    );
+  }
+
+  // Delete a budget
+  Future<int> deleteBudget(int id) async {
+    final db = await database;
+    return await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
   }
 
   // Close the database

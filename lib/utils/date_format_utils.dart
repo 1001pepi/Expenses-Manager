@@ -71,6 +71,11 @@ class DateFormatUtils {
         final lastDayOfWeek = firstDayOfWeek.add(const Duration(days: 6));
         final currentYear = DateTime.now().year;
 
+        // If the week spans two different years, show both years explicitly
+        if (firstDayOfWeek.year != lastDayOfWeek.year) {
+          return '${firstDayOfWeek.day} ${getMonthAbbr(firstDayOfWeek.month)} ${firstDayOfWeek.year} - ${lastDayOfWeek.day} ${getMonthAbbr(lastDayOfWeek.month)} ${lastDayOfWeek.year}';
+        }
+
         // Check if the week is entirely within the current year
         if (firstDayOfWeek.year == currentYear &&
             lastDayOfWeek.year == currentYear) {

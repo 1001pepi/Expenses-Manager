@@ -20,7 +20,13 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _currencyController = TextEditingController();
-  Color _selectedColor = ColorPalette.shared.first;
+  final _nameFocusNode = FocusNode();
+  Color? _selectedColor;
+
+  // Track original values for change detection
+  String _originalName = '';
+  String _originalCurrency = '';
+  Color? _originalColor;
 
   @override
   void initState() {
@@ -30,9 +36,33 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       _nameController.text = widget.account!.name;
       _currencyController.text = widget.account!.currency;
       _selectedColor = Color(widget.account!.color);
+      _originalName = widget.account!.name;
+      _originalCurrency = widget.account!.currency;
+      _originalColor = Color(widget.account!.color);
     } else {
       // Set default currency from ThemeProvider
       _currencyController.text = widget.themeProvider?.defaultCurrency ?? 'EUR';
+      _originalCurrency = widget.themeProvider?.defaultCurrency ?? 'EUR';
+    }
+
+    // Add listener to name controller for state updates
+    _nameController.addListener(() {
+      setState(() {});
+    });
+
+    // Request focus on name field after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _nameFocusNode.requestFocus();
+    });
+  }
+
+  bool get _isFormValid {
+    if (widget.account != null) {
+      // Editing mode: enable if form is valid (allow saving even without changes)
+      return _nameController.text.trim().isNotEmpty && _selectedColor != null;
+    } else {
+      // Creating mode: enable if name is set and color is selected
+      return _nameController.text.trim().isNotEmpty && _selectedColor != null;
     }
   }
 
@@ -40,6 +70,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   void dispose() {
     _nameController.dispose();
     _currencyController.dispose();
+    _nameFocusNode.dispose();
     super.dispose();
   }
 
@@ -81,7 +112,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         final updatedAccount = widget.account!.copyWith(
           name: _nameController.text,
           currency: _currencyController.text,
-          color: _selectedColor.value,
+          color: _selectedColor!.value,
         );
         await DatabaseHelper.instance.updateAccount(updatedAccount);
       } else {
@@ -89,7 +120,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         final account = Account(
           name: _nameController.text,
           currency: _currencyController.text,
-          color: _selectedColor.value,
+          color: _selectedColor!.value,
         );
         await DatabaseHelper.instance.createAccount(account);
       }
@@ -124,6 +155,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                 children: [
                   TextFormField(
                     controller: _nameController,
+                    focusNode: _nameFocusNode,
                     decoration: InputDecoration(
                       labelText: 'Name',
                       border: InputBorder.none,
@@ -215,7 +247,9 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                     spacing: 12,
                     runSpacing: 12,
                     children: ColorPalette.shared.map((color) {
-                      final isSelected = color.value == _selectedColor.value;
+                      final isSelected =
+                          _selectedColor != null &&
+                          color.value == _selectedColor!.value;
                       return GestureDetector(
                         onTap: () {
                           setState(() {
@@ -277,14 +311,20 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                 child: SizedBox(
                   width: 200,
                   child: ElevatedButton(
-                    onPressed: _saveAccount,
+                    onPressed: !_isFormValid ? null : _saveAccount,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                         vertical: 16,
                         horizontal: 32,
                       ),
                       backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Colors.white,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      disabledBackgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withOpacity(0.2),
+                      disabledForegroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withOpacity(0.5),
                       elevation: 2,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(40),

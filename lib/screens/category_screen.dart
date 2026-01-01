@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
 import '../models/category.dart';
+import '../theme/theme_provider.dart';
 import 'create_category_screen.dart';
+import '../widgets/config_drawer.dart';
 
 class CategoryScreen extends StatefulWidget {
-  const CategoryScreen({super.key});
+  final ThemeProvider? themeProvider;
+
+  const CategoryScreen({super.key, this.themeProvider});
 
   @override
   State<CategoryScreen> createState() => _CategoryScreenState();
@@ -13,6 +17,7 @@ class CategoryScreen extends StatefulWidget {
 
 class _CategoryScreenState extends State<CategoryScreen> {
   late Future<List<Category>> _categoriesFuture;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -22,7 +27,9 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
   void _refreshCategories() {
     setState(() {
-      _categoriesFuture = DatabaseHelper.instance.getAllCategories();
+      _categoriesFuture = DatabaseHelper.instance.getAllCategories(
+        forceRefresh: true,
+      );
     });
   }
 
@@ -33,7 +40,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const CreateCategoryScreen(),
+            CreateCategoryScreen(themeProvider: widget.themeProvider),
       ),
     );
     if (created == true) {
@@ -44,10 +51,18 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
+      drawerEnableOpenDragGesture: false,
+      drawer: ConfigDrawer(themeProvider: widget.themeProvider),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              _scaffoldKey.currentState?.openDrawer();
+            },
+          ),
         ),
         title: const Text('Categories'),
         centerTitle: true,
@@ -73,14 +88,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('No categories yet'),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _openCreateCategory,
-                    child: const Text('Create your first category'),
-                  ),
-                ],
+                children: [const Text('No categories yet')],
               ),
             );
           }
@@ -106,8 +114,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   final result = await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          CreateCategoryScreen(category: category),
+                      builder: (context) => CreateCategoryScreen(
+                        category: category,
+                        themeProvider: widget.themeProvider,
+                      ),
                     ),
                   );
                   if (result == true) {

@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
 import '../models/category.dart';
+import '../theme/theme_provider.dart';
 import '../utils/color_palette.dart';
+import '../widgets/config_drawer.dart';
 import 'icon_catalog_screen.dart';
 
 class CreateCategoryScreen extends StatefulWidget {
   final Category? category; // Optional category for editing
+  final ThemeProvider? themeProvider;
 
-  const CreateCategoryScreen({super.key, this.category});
+  const CreateCategoryScreen({super.key, this.category, this.themeProvider});
 
   @override
   State<CreateCategoryScreen> createState() => _CreateCategoryScreenState();
@@ -17,6 +20,7 @@ class CreateCategoryScreen extends StatefulWidget {
 class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _nameFocusNode = FocusNode();
   bool _isSaving = false;
 
   // Simple icon choices; can be extended later
@@ -39,8 +43,13 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
     Icons.local_cafe_outlined,
   ];
 
-  IconData _selectedIcon = Icons.category_outlined;
-  Color _selectedColor = ColorPalette.shared.first;
+  IconData? _selectedIcon;
+  Color? _selectedColor;
+
+  // Track original values for change detection
+  String _originalName = '';
+  IconData? _originalIcon;
+  Color? _originalColor;
 
   @override
   void initState() {
@@ -53,12 +62,40 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         fontFamily: 'MaterialIcons',
       );
       _selectedColor = Color(widget.category!.color);
+      _originalName = widget.category!.name;
+      _originalIcon = _selectedIcon;
+      _originalColor = _selectedColor;
+    }
+
+    // Add listener to name controller for state updates
+    _nameController.addListener(() {
+      setState(() {});
+    });
+
+    // Request focus on name field after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _nameFocusNode.requestFocus();
+    });
+  }
+
+  bool get _isFormValid {
+    if (widget.category != null) {
+      // Editing mode: enable if form is valid (allow saving even without changes)
+      return _nameController.text.trim().isNotEmpty &&
+          _selectedIcon != null &&
+          _selectedColor != null;
+    } else {
+      // Creating mode: enable if name is set, icon is selected, and color is selected
+      return _nameController.text.trim().isNotEmpty &&
+          _selectedIcon != null &&
+          _selectedColor != null;
     }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _nameFocusNode.dispose();
     super.dispose();
   }
 
@@ -100,8 +137,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
         // Update existing category
         final updatedCategory = widget.category!.copyWith(
           name: _nameController.text.trim(),
-          iconCode: _selectedIcon.codePoint,
-          color: _selectedColor.value,
+          iconCode: _selectedIcon!.codePoint,
+          color: _selectedColor!.value,
         );
         DatabaseHelper.instance
             .updateCategory(updatedCategory)
@@ -124,8 +161,8 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
             .createCategory(
               Category(
                 name: _nameController.text.trim(),
-                iconCode: _selectedIcon.codePoint,
-                color: _selectedColor.value,
+                iconCode: _selectedIcon!.codePoint,
+                color: _selectedColor!.value,
               ),
             )
             .then((_) {
@@ -148,10 +185,14 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawerEnableOpenDragGesture: false,
+      drawer: ConfigDrawer(themeProvider: widget.themeProvider),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
         ),
         title: Text(
           widget.category != null ? 'Edit Category' : 'Create Category',
@@ -165,6 +206,7 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
           children: [
             TextFormField(
               controller: _nameController,
+              focusNode: _nameFocusNode,
               decoration: const InputDecoration(
                 labelText: 'Name',
                 border: UnderlineInputBorder(),
@@ -196,7 +238,9 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
               children: [
                 // Show first 11 icons, then '...'
                 ..._icons.take(11).map((iconData) {
-                  final isSelected = iconData == _selectedIcon;
+                  final isSelected =
+                      _selectedIcon != null &&
+                      iconData.codePoint == _selectedIcon!.codePoint;
                   return InkWell(
                     onTap: () {
                       setState(() => _selectedIcon = iconData);
@@ -288,7 +332,9 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
                 runSpacing: 12,
                 alignment: WrapAlignment.center,
                 children: ColorPalette.shared.map((color) {
-                  final isSelected = color.value == _selectedColor.value;
+                  final isSelected =
+                      _selectedColor != null &&
+                      color.value == _selectedColor!.value;
                   return GestureDetector(
                     onTap: () => setState(() => _selectedColor = color),
                     child: Container(
@@ -328,10 +374,18 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
               child: SizedBox(
                 width: 200,
                 child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveCategory,
+                  onPressed: (!_isFormValid || _isSaving)
+                      ? null
+                      : _saveCategory,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    disabledBackgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withOpacity(0.20),
+                    disabledForegroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withOpacity(0.5),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30),
