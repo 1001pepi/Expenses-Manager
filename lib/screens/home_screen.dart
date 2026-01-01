@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
+import 'package:world_countries/world_countries.dart';
 
 import '../database/database_helper.dart';
+import '../models/account.dart';
 import '../models/budget.dart';
 import '../models/category.dart';
+import '../models/expense.dart';
 import '../theme/theme_provider.dart';
 import '../utils/date_format_utils.dart';
 import '../widgets/config_drawer.dart';
+import 'budget_details_screen.dart';
+import 'edit_budget_screen.dart';
 import 'add_financial_item_screen.dart';
 
 class MyHomePage extends StatefulWidget {
@@ -25,8 +32,9 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   late Map<String, DateTime> _periodDates;
   DateTimeRange? _customPeriodRange;
-  String _selectedTab = 'Day';
+  String _selectedTab = 'Month';
   late TabController _mainTabController;
+  List<dynamic>? _cachedBudgetData;
 
   @override
   void initState() {
@@ -44,6 +52,37 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       'Year': DateTime(today.year, 1, 1),
       'Period': today,
     };
+  }
+
+  List<int> _allocatePercentages(List<Budget> budgets, double total) {
+    if (total <= 0 || budgets.isEmpty) {
+      return List<int>.filled(budgets.length, 0);
+    }
+
+    final allocations = <int>[];
+    final remainders = <Map<String, dynamic>>[];
+    int floorSum = 0;
+
+    for (int i = 0; i < budgets.length; i++) {
+      final raw = (budgets[i].amount / total) * 100;
+      final base = raw.floor();
+      allocations.add(base);
+      floorSum += base;
+      remainders.add({'index': i, 'remainder': raw - base});
+    }
+
+    int remaining = 100 - floorSum;
+    remainders.sort(
+      (a, b) => (b['remainder'] as double).compareTo(a['remainder'] as double),
+    );
+
+    for (int j = 0; j < remainders.length && remaining > 0; j++) {
+      final idx = remainders[j]['index'] as int;
+      allocations[idx] += 1;
+      remaining -= 1;
+    }
+
+    return allocations;
   }
 
   @override
@@ -140,7 +179,6 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           Expanded(
             child: TabBarView(
               controller: _mainTabController,
-              physics: const NeverScrollableScrollPhysics(),
               children: [
                 _buildMainTabContent(context, tabNames, 'Budget'),
                 _buildMainTabContent(context, tabNames, 'Expenses'),
@@ -152,8 +190,8 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 16.0, right: 16.0),
         child: FloatingActionButton(
-          onPressed: () {
-            Navigator.push(
+          onPressed: () async {
+            final result = await Navigator.push(
               context,
               PageRouteBuilder(
                 transitionDuration: const Duration(milliseconds: 100),
@@ -168,6 +206,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                     ),
               ),
             );
+
+            if (result == true && mounted) {
+              setState(() {});
+            }
           },
           child: const Icon(Icons.add),
         ),
@@ -372,12 +414,9 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       future: Future.wait([
         DatabaseHelper.instance.getAllBudgets(),
         DatabaseHelper.instance.getAllCategories(),
+        DatabaseHelper.instance.getAllAccounts(),
       ]),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
         if (snapshot.hasError) {
           return Center(
             child: Text(
@@ -387,14 +426,35 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           );
         }
 
-        final results = snapshot.data ?? [<dynamic>[], <Category>[]];
+        List<dynamic>? results;
+        if (snapshot.hasData) {
+          results = snapshot.data;
+          _cachedBudgetData = results;
+        } else if ((snapshot.connectionState == ConnectionState.waiting ||
+                snapshot.connectionState == ConnectionState.active) &&
+            _cachedBudgetData != null) {
+          results = _cachedBudgetData;
+        } else if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else {
+          return const Center(child: Text('No data'));
+        }
+
+        results = results ?? [<dynamic>[], <Category>[], <Account>[]];
         final budgetMaps = results[0] as List<dynamic>;
         final categories = results.length > 1
             ? results[1] as List<Category>
             : <Category>[];
+        final accounts = results.length > 2
+            ? results[2] as List<Account>
+            : <Account>[];
         final categoryMap = {
           for (final c in categories)
             if (c.id != null) c.id!: c,
+        };
+        final accountMap = {
+          for (final a in accounts)
+            if (a.id != null) a.id!: a,
         };
 
         final filteredBudgets = _filterBudgetsByPeriod(
@@ -404,118 +464,252 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           periodRange,
         );
 
+        filteredBudgets.sort((a, b) => b.amount.compareTo(a.amount));
+
+        final totalBudgetAmount = filteredBudgets.fold<double>(
+          0,
+          (sum, budget) => sum + budget.amount,
+        );
+
+        final percentAllocations = _allocatePercentages(
+          filteredBudgets,
+          totalBudgetAmount,
+        );
+
+        final primaryAccount = filteredBudgets.isNotEmpty
+            ? accountMap[filteredBudgets[0].accountId]
+            : null;
+        final totalCurrencySymbol = _currencySymbol(primaryAccount?.currency);
+
         if (filteredBudgets.isEmpty) {
-          return Center(
-            child: Text(
-              'No budgets for this period',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.tertiary,
-              ),
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(32.0, 80.0, 32.0, 32.0),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 80,
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'No Budget',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'You haven\'t set any budget for this period.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.6),
+                    height: 1.5,
+                  ),
+                ),
+              ],
             ),
           );
         }
 
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          itemCount: filteredBudgets.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 4),
-          itemBuilder: (context, index) {
-            final budget = filteredBudgets[index];
-            final category = categoryMap[budget.categoryId];
-            final categoryColor = category != null
-                ? Color(category.color)
-                : Theme.of(context).colorScheme.primary;
-            final categoryIcon = category != null
-                ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
-                : Icons.category;
-
-            return Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor.withOpacity(0.2),
-                ),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: _BudgetPieChart(
+                total: totalBudgetAmount,
+                slices: [
+                  for (final b in filteredBudgets)
+                    _PieSliceData(
+                      value: b.amount,
+                      color: Color(
+                        categoryMap[b.categoryId]?.color ??
+                            Theme.of(context).colorScheme.primary.value,
+                      ),
+                    ),
+                ],
+                label:
+                    '$totalCurrencySymbol${_formatAmount(totalBudgetAmount)}',
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: categoryColor,
-                    child: Icon(categoryIcon, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Budget: ${budget.amount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            if (budget.tags.isNotEmpty)
-                              Flexible(
-                                child: Text(
-                                  'Tags: ${budget.tags}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.7),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                          ],
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.only(
+                  left: 4,
+                  right: 4,
+                  top: 4,
+                  bottom: 100,
+                ),
+                itemCount: filteredBudgets.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 4),
+                itemBuilder: (context, index) {
+                  final budget = filteredBudgets[index];
+                  final category = categoryMap[budget.categoryId];
+                  final account = accountMap[budget.accountId];
+                  final categoryColor = category != null
+                      ? Color(category.color)
+                      : Theme.of(context).colorScheme.primary;
+                  final categoryIcon = category != null
+                      ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
+                      : Icons.category;
+                  final currencySymbol = _currencySymbol(account?.currency);
+                  final amountText = _formatAmount(budget.amount);
+                  final percentValue = index < percentAllocations.length
+                      ? percentAllocations[index]
+                      : 0;
+                  final percentText = '$percentValue%';
+
+                  final cardColor = Theme.of(
+                    context,
+                  ).colorScheme.surfaceVariant;
+                  return GestureDetector(
+                    onTap: () async {
+                      final updated = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => BudgetDetailsScreen(
+                            budget: budget,
+                            account: account,
+                            category: category,
+                            themeProvider: widget.themeProvider,
+                          ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Period: ${DateFormatUtils.formatDate(budget.startDate)} - ${DateFormatUtils.formatDate(budget.endDate)}',
-                          style: TextStyle(
-                            fontSize: 12,
+                      );
+                      if (updated == true && mounted) {
+                        setState(() {});
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.12),
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
                             color: Theme.of(
                               context,
-                            ).colorScheme.onSurface.withOpacity(0.7),
+                            ).colorScheme.shadow.withOpacity(0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
-                        if (budget.comment != null &&
-                            budget.comment!.isNotEmpty)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        ],
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final rowWidth = constraints.maxWidth;
+                          final iconWidth = rowWidth * 0.10;
+                          final gapSmall = rowWidth * 0.035;
+                          final nameWidth = rowWidth * 0.37;
+                          final accountWidth = rowWidth * 0.16;
+                          final percentWidth = rowWidth * 0.12;
+                          final gapMedium = rowWidth * 0.03;
+                          final amountWidth = rowWidth * 0.15;
+
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              const SizedBox(height: 4),
-                              Text(
-                                budget.comment!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withOpacity(0.6),
+                              SizedBox(
+                                width: iconWidth,
+                                child: Center(
+                                  child: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: categoryColor,
+                                    child: Icon(
+                                      categoryIcon,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                              ),
+                              SizedBox(width: gapSmall),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: nameWidth,
+                                          child: Text(
+                                            category?.name ?? 'Budget',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: accountWidth,
+                                          child: Text(
+                                            account?.name ?? 'Account',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.left,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(width: gapSmall),
+                                        SizedBox(
+                                          width: percentWidth,
+                                          child: Text(
+                                            percentText,
+                                            textAlign: TextAlign.left,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 15,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withOpacity(0.85),
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(width: gapMedium),
+                                        SizedBox(
+                                          width: amountWidth,
+                                          child: Text(
+                                            '$currencySymbol$amountText',
+                                            textAlign: TextAlign.right,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
-                          ),
-                      ],
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         );
       },
     );
@@ -527,108 +721,380 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     DateTime periodDate,
     DateTimeRange? periodRange,
   ) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(12.0),
-            ),
+    return FutureBuilder(
+      future: Future.wait([
+        DatabaseHelper.instance.getAllExpenses(),
+        DatabaseHelper.instance.getAllCategories(),
+        DatabaseHelper.instance.getAllAccounts(),
+      ]),
+      builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final expenses = snapshot.data?[0] as List<Expense>? ?? [];
+        final categories = snapshot.data?[1] as List<Category>? ?? [];
+        final accounts = snapshot.data?[2] as List<Account>? ?? [];
+
+        final categoryMap = {
+          for (final c in categories)
+            if (c.id != null) c.id!: c,
+        };
+        final accountMap = {
+          for (final a in accounts)
+            if (a.id != null) a.id!: a,
+        };
+
+        final filteredExpenses = _filterExpensesByPeriod(
+          expenses,
+          selectedTab,
+          periodDate,
+          periodRange,
+        );
+
+        filteredExpenses.sort((a, b) => b.date.compareTo(a.date));
+
+        final totalExpenseAmount = filteredExpenses.fold<double>(
+          0,
+          (sum, expense) => sum + expense.amount,
+        );
+
+        final primaryAccount = filteredExpenses.isNotEmpty
+            ? accountMap[filteredExpenses[0].accountId]
+            : null;
+        final totalCurrencySymbol = _currencySymbol(primaryAccount?.currency);
+
+        if (filteredExpenses.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(32.0, 80.0, 32.0, 32.0),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Expenses', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8.0),
+                Icon(
+                  Icons.receipt_long_outlined,
+                  size: 80,
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                ),
+                const SizedBox(height: 24),
                 Text(
-                  'Manage and track your expenses by adding detailed records and categories.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).hintColor,
+                  'No Expenses',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 12.0),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Expense'),
-                  onPressed: () {
-                    Navigator.push(
+                const SizedBox(height: 12),
+                Text(
+                  'You haven\'t recorded any expenses for this period.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Theme.of(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => AddFinancialItemScreen(
-                          themeProvider: widget.themeProvider,
-                          selectedTab: selectedTab,
-                          periodDate: periodDate,
-                          customPeriodRange: periodRange,
-                        ),
-                      ),
-                    );
-                  },
+                    ).colorScheme.onSurface.withOpacity(0.6),
+                    height: 1.5,
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16.0),
-          _buildInfoCard(
-            context,
-            icon: Icons.info_outline,
-            title: 'Coming soon',
-            subtitle:
-                'Expenses tracking will be available in a future update. You can still add expenses via the button above.',
-          ),
-        ],
-      ),
+          );
+        }
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: 12.0,
+                horizontal: 16.0,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withOpacity(0.25),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total Expenses',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    Text(
+                      '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.only(
+                  left: 4,
+                  right: 4,
+                  top: 4,
+                  bottom: 100,
+                ),
+                itemCount: filteredExpenses.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 4),
+                itemBuilder: (context, index) {
+                  final expense = filteredExpenses[index];
+                  final category = categoryMap[expense.categoryId];
+                  final account = accountMap[expense.accountId];
+                  final categoryColor = category != null
+                      ? Color(category.color)
+                      : Theme.of(context).colorScheme.primary;
+                  final categoryIcon = category != null
+                      ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
+                      : Icons.category;
+                  final currencySymbol = _currencySymbol(account?.currency);
+                  final amountText = _formatAmount(expense.amount);
+
+                  final cardColor = Theme.of(
+                    context,
+                  ).colorScheme.surfaceVariant;
+                  return GestureDetector(
+                    onTap: () async {
+                      // TODO: Navigate to expense details/edit screen
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.12),
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.shadow.withOpacity(0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final rowWidth = constraints.maxWidth;
+                          final iconWidth = rowWidth * 0.10;
+                          final gapSmall = rowWidth * 0.035;
+                          final nameWidth = rowWidth * 0.40;
+                          final accountWidth = rowWidth * 0.18;
+                          final gapMedium = rowWidth * 0.03;
+                          final amountWidth = rowWidth * 0.20;
+
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: iconWidth,
+                                child: Center(
+                                  child: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: categoryColor,
+                                    child: Icon(
+                                      categoryIcon,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: gapSmall),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: nameWidth,
+                                          child: Text(
+                                            category?.name ?? 'Expense',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: accountWidth,
+                                          child: Text(
+                                            account?.name ?? 'Account',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.left,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(width: gapMedium),
+                                        SizedBox(
+                                          width: amountWidth,
+                                          child: Text(
+                                            '$currencySymbol$amountText',
+                                            textAlign: TextAlign.right,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.calendar_today,
+                                          size: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.6),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          DateFormatUtils.formatDate(
+                                            expense.date,
+                                          ),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.6),
+                                          ),
+                                        ),
+                                        if (expense.photo1Path != null ||
+                                            expense.photo2Path != null) ...[
+                                          const SizedBox(width: 8),
+                                          Icon(
+                                            Icons.photo,
+                                            size: 12,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.6),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    if (expense.tags.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Tags: ${expense.tags}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.7),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                    if (expense.comment != null &&
+                                        expense.comment!.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        expense.comment!,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withOpacity(0.6),
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildInfoCard(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.2),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  String _formatAmount(double amount) {
+    String addCommas(String value) {
+      final parts = value.split('.');
+      final integerPart = parts[0];
+      final decimalPart = parts.length > 1 ? '.${parts[1]}' : '';
+
+      final buffer = StringBuffer();
+      for (int i = 0; i < integerPart.length; i++) {
+        if (i > 0 && (integerPart.length - i) % 3 == 0) {
+          buffer.write(',');
+        }
+        buffer.write(integerPart[i]);
+      }
+      return buffer.toString() + decimalPart;
+    }
+
+    if (amount % 1 == 0) {
+      return addCommas(amount.toStringAsFixed(0));
+    }
+
+    final trimmed = amount.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '');
+    final cleaned = trimmed.endsWith('.')
+        ? trimmed.substring(0, trimmed.length - 1)
+        : trimmed;
+    return addCommas(cleaned);
+  }
+
+  String _currencySymbol(String? code) {
+    if (code == null || code.isEmpty) return '';
+
+    final currency = FiatCurrency.list.firstWhere(
+      (c) => c.code == code,
+      orElse: () => FiatCurrency.list.first,
     );
+
+    return currency.symbol ?? '';
   }
 
   List<Budget> _filterBudgetsByPeriod(
@@ -690,6 +1156,62 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           return overlaps;
         })
         .toList();
+  }
+
+  List<Expense> _filterExpensesByPeriod(
+    List<Expense> expenses,
+    String tabName,
+    DateTime periodDate,
+    DateTimeRange? periodRange,
+  ) {
+    DateTime endOfDay(DateTime d) =>
+        DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
+
+    return expenses.where((expense) {
+      late DateTime rangeStart;
+      late DateTime rangeEnd;
+
+      switch (tabName) {
+        case 'Period':
+          if (periodRange == null) return false;
+          rangeStart = DateTime(
+            periodRange.start.year,
+            periodRange.start.month,
+            periodRange.start.day,
+          );
+          rangeEnd = endOfDay(periodRange.end);
+          break;
+        case 'Day':
+          rangeStart = DateTime(
+            periodDate.year,
+            periodDate.month,
+            periodDate.day,
+          );
+          rangeEnd = endOfDay(periodDate);
+          break;
+        case 'Week':
+          rangeStart = periodDate.subtract(
+            Duration(days: periodDate.weekday - 1),
+          );
+          rangeEnd = endOfDay(rangeStart.add(const Duration(days: 6)));
+          break;
+        case 'Month':
+          rangeStart = DateTime(periodDate.year, periodDate.month, 1);
+          rangeEnd = endOfDay(
+            DateTime(periodDate.year, periodDate.month + 1, 0),
+          );
+          break;
+        case 'Year':
+          rangeStart = DateTime(periodDate.year, 1, 1);
+          rangeEnd = endOfDay(DateTime(periodDate.year + 1, 1, 0));
+          break;
+        default:
+          return false;
+      }
+
+      return !expense.date.isBefore(rangeStart) &&
+          !expense.date.isAfter(rangeEnd);
+    }).toList();
   }
 
   Future<void> _showPeriodPicker(BuildContext context, String tabName) async {
@@ -771,5 +1293,124 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
             end: DateTime(now.year, now.month, now.day + 6),
           ),
     );
+  }
+}
+
+class _PieSliceData {
+  const _PieSliceData({required this.value, required this.color});
+
+  final double value;
+  final Color color;
+}
+
+class _BudgetPieChart extends StatelessWidget {
+  const _BudgetPieChart({
+    required this.total,
+    required this.slices,
+    required this.label,
+  });
+
+  final double total;
+  final List<_PieSliceData> slices;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasData = total > 0 && slices.any((s) => s.value > 0);
+    final chartSize = 220.0;
+
+    return SizedBox(
+      height: chartSize,
+      width: chartSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: Size(chartSize, chartSize),
+            painter: _PieChartPainter(
+              slices: slices,
+              total: hasData ? total : 1,
+              baseColor: Theme.of(context).colorScheme.surfaceVariant,
+              shadowColor: Theme.of(
+                context,
+              ).colorScheme.shadow.withOpacity(hasData ? 0.12 : 0.08),
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PieChartPainter extends CustomPainter {
+  _PieChartPainter({
+    required this.slices,
+    required this.total,
+    required this.baseColor,
+    required this.shadowColor,
+  });
+
+  final List<_PieSliceData> slices;
+  final double total;
+  final Color baseColor;
+  final Color shadowColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    final strokeWidth = radius * 0.30;
+    final rect = Rect.fromCircle(center: center, radius: radius - strokeWidth);
+
+    final basePaint = Paint()
+      ..color = baseColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    final shadowPaint = Paint()
+      ..color = shadowColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    canvas.drawArc(rect, 0, 2 * math.pi, false, shadowPaint);
+    canvas.drawArc(rect, 0, 2 * math.pi, false, basePaint);
+
+    double startAngle = -math.pi / 2;
+    for (final slice in slices) {
+      if (slice.value <= 0 || total <= 0) continue;
+      final sweepAngle = (slice.value / total) * 2 * math.pi;
+      final slicePaint = Paint()
+        ..color = slice.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.butt;
+
+      canvas.drawArc(rect, startAngle, sweepAngle, false, slicePaint);
+      startAngle += sweepAngle;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PieChartPainter oldDelegate) {
+    if (oldDelegate.total != total ||
+        oldDelegate.slices.length != slices.length) {
+      return true;
+    }
+    for (int i = 0; i < slices.length; i++) {
+      if (slices[i].value != oldDelegate.slices[i].value ||
+          slices[i].color != oldDelegate.slices[i].color) {
+        return true;
+      }
+    }
+    return false;
   }
 }

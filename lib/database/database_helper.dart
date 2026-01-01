@@ -4,6 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import '../models/account.dart';
 import '../models/category.dart';
+import '../models/expense.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -33,7 +34,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -78,6 +79,23 @@ class DatabaseHelper {
         FOREIGN KEY (categoryId) REFERENCES categories (id)
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE expenses (
+        id $idType,
+        accountId $intType,
+        categoryId $intType,
+        amount $realType,
+        date $textType,
+        tags $textType,
+        comment TEXT,
+        photo1Path TEXT,
+        photo2Path TEXT,
+        createdAt $textType,
+        FOREIGN KEY (accountId) REFERENCES accounts (id),
+        FOREIGN KEY (categoryId) REFERENCES categories (id)
+      )
+    ''');
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -112,6 +130,30 @@ class DatabaseHelper {
           endDate $textType,
           tags $textType,
           comment TEXT,
+          createdAt $textType,
+          FOREIGN KEY (accountId) REFERENCES accounts (id),
+          FOREIGN KEY (categoryId) REFERENCES categories (id)
+        )
+      ''');
+    }
+
+    if (oldVersion < 4) {
+      const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+      const realType = 'REAL NOT NULL';
+      const intType = 'INTEGER NOT NULL';
+      const textType = 'TEXT NOT NULL';
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+          id $idType,
+          accountId $intType,
+          categoryId $intType,
+          amount $realType,
+          date $textType,
+          tags $textType,
+          comment TEXT,
+          photo1Path TEXT,
+          photo2Path TEXT,
           createdAt $textType,
           FOREIGN KEY (accountId) REFERENCES accounts (id),
           FOREIGN KEY (categoryId) REFERENCES categories (id)
@@ -293,6 +335,96 @@ class DatabaseHelper {
   Future<int> deleteBudget(int id) async {
     final db = await database;
     return await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Create an expense
+  Future<Expense> createExpense(Expense expense) async {
+    final db = await database;
+    final id = await db.insert('expenses', expense.toMap());
+    return expense.copyWith(id: id);
+  }
+
+  // Get all expenses
+  Future<List<Expense>> getAllExpenses() async {
+    final db = await database;
+    final result = await db.query('expenses', orderBy: 'date DESC');
+    return result.map((map) => Expense.fromMap(map)).toList();
+  }
+
+  // Get expenses by account
+  Future<List<Expense>> getExpensesByAccount(int accountId) async {
+    final db = await database;
+    final result = await db.query(
+      'expenses',
+      where: 'accountId = ?',
+      whereArgs: [accountId],
+      orderBy: 'date DESC',
+    );
+    return result.map((map) => Expense.fromMap(map)).toList();
+  }
+
+  // Get expenses by category
+  Future<List<Expense>> getExpensesByCategory(int categoryId) async {
+    final db = await database;
+    final result = await db.query(
+      'expenses',
+      where: 'categoryId = ?',
+      whereArgs: [categoryId],
+      orderBy: 'date DESC',
+    );
+    return result.map((map) => Expense.fromMap(map)).toList();
+  }
+
+  // Get expenses by date range
+  Future<List<Expense>> getExpensesByDateRange(
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    final db = await database;
+    final result = await db.query(
+      'expenses',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [startDate.toIso8601String(), endDate.toIso8601String()],
+      orderBy: 'date DESC',
+    );
+    return result.map((map) => Expense.fromMap(map)).toList();
+  }
+
+  // Get expenses by account and date range
+  Future<List<Expense>> getExpensesByAccountAndDateRange(
+    int accountId,
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    final db = await database;
+    final result = await db.query(
+      'expenses',
+      where: 'accountId = ? AND date >= ? AND date <= ?',
+      whereArgs: [
+        accountId,
+        startDate.toIso8601String(),
+        endDate.toIso8601String(),
+      ],
+      orderBy: 'date DESC',
+    );
+    return result.map((map) => Expense.fromMap(map)).toList();
+  }
+
+  // Update an expense
+  Future<int> updateExpense(Expense expense) async {
+    final db = await database;
+    return await db.update(
+      'expenses',
+      expense.toMap(),
+      where: 'id = ?',
+      whereArgs: [expense.id],
+    );
+  }
+
+  // Delete an expense
+  Future<int> deleteExpense(int id) async {
+    final db = await database;
+    return await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
   }
 
   // Close the database

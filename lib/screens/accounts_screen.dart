@@ -3,6 +3,7 @@ import 'package:world_countries/world_countries.dart';
 import '../theme/theme_provider.dart';
 import '../models/account.dart';
 import '../database/database_helper.dart';
+import '../widgets/config_drawer.dart';
 import 'add_account_screen.dart';
 
 class AccountsScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class AccountsScreen extends StatefulWidget {
 }
 
 class _AccountsScreenState extends State<AccountsScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Account> _accounts = [];
   bool _isLoading = true;
 
@@ -71,11 +73,18 @@ class _AccountsScreenState extends State<AccountsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: _buildSettingsDrawer(context),
+      key: _scaffoldKey,
+      drawerEnableOpenDragGesture: false,
+      drawer: ConfigDrawer(themeProvider: widget.themeProvider),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              _scaffoldKey.currentState?.openDrawer();
+            },
+          ),
         ),
         title: const Text('Accounts'),
         centerTitle: true,
@@ -131,74 +140,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-    );
-  }
-
-  Widget _buildSettingsDrawer(BuildContext context) {
-    return Drawer(
-      child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              child: Text(
-                'Settings',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.home_outlined),
-              title: const Text('Home'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Theme'),
-              trailing: Switch(
-                value: widget.themeProvider.themeMode == ThemeMode.dark,
-                onChanged: (value) {
-                  widget.themeProvider.toggleTheme();
-                },
-              ),
-              onTap: () {
-                widget.themeProvider.toggleTheme();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_money_outlined),
-              title: const Text('Currency'),
-              onTap: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.account_balance_wallet_outlined),
-              title: const Text('Accounts'),
-              onTap: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.backup_outlined),
-              title: const Text('Backup / Export'),
-              onTap: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('About'),
-              onTap: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

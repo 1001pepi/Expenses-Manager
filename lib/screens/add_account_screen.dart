@@ -3,6 +3,7 @@ import 'package:world_countries/world_countries.dart';
 import '../models/account.dart';
 import '../database/database_helper.dart';
 import '../theme/theme_provider.dart';
+import '../widgets/config_drawer.dart';
 import 'currency_selection_screen.dart';
 import '../utils/color_palette.dart';
 
@@ -21,6 +22,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   final _nameController = TextEditingController();
   final _currencyController = TextEditingController();
   final _nameFocusNode = FocusNode();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Color? _selectedColor;
 
   // Track original values for change detection
@@ -66,12 +68,48 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
   }
 
+  bool get _hasUnsavedChanges {
+    if (widget.account == null) return false; // No changes in create mode
+    return _nameController.text != _originalName ||
+        _currencyController.text != _originalCurrency ||
+        _selectedColor != _originalColor;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
     _currencyController.dispose();
     _nameFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<bool> _onWillPop() async {
+    if (!_hasUnsavedChanges) {
+      return true;
+    }
+
+    final shouldPop = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard Changes?', style: TextStyle(fontSize: 18)),
+        content: const Text(
+          'You have unsaved changes. Are you sure you want to discard them?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+
+    return shouldPop ?? false;
   }
 
   Future<void> _deleteAccount() async {
@@ -133,215 +171,251 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop && _hasUnsavedChanges) {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && mounted) {
+            Navigator.pop(context);
+          }
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawerEnableOpenDragGesture: false,
+        drawer: ConfigDrawer(
+          themeProvider: widget.themeProvider,
+          onWillNavigate: () async {
+            if (_hasUnsavedChanges) {
+              return await _onWillPop();
+            }
+            return true;
+          },
         ),
-        title: Text(widget.account != null ? 'Edit Account' : 'Add Account'),
-        centerTitle: true,
-      ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24.0,
-                  vertical: 16.0,
-                ),
-                children: [
-                  TextFormField(
-                    controller: _nameController,
-                    focusNode: _nameFocusNode,
-                    decoration: InputDecoration(
-                      labelText: 'Name',
-                      border: InputBorder.none,
-                      enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      ),
-                      focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter an account name';
-                      }
-                      return null;
+        appBar: AppBar(
+          leading: widget.account != null
+              ? Builder(
+                  builder: (context) => IconButton(
+                    icon: const Icon(Icons.menu),
+                    onPressed: () {
+                      FocusScope.of(context).unfocus();
+                      _scaffoldKey.currentState?.openDrawer();
                     },
                   ),
-                  const SizedBox(height: 16),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Currency',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      InkWell(
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            PageRouteBuilder(
-                              transitionDuration: Duration.zero,
-                              reverseTransitionDuration: Duration.zero,
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) =>
-                                      CurrencySelectionScreen(
-                                        selectedCurrency:
-                                            _currencyController.text,
-                                        onCurrencySelected: (selectedCurrency) {
-                                          setState(() {
-                                            _currencyController.text =
-                                                selectedCurrency;
-                                          });
-                                        },
-                                      ),
-                            ),
-                          );
-                        },
-                        child: Builder(
-                          builder: (context) {
-                            final currency = FiatCurrency.list.firstWhere(
-                              (c) => c.code == _currencyController.text,
-                              orElse: () => FiatCurrency.list.first,
-                            );
-                            return Text(
-                              '${_currencyController.text} (${currency.symbol ?? ''})',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                )
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.pop(context),
+                ),
+          title: Text(widget.account != null ? 'Edit Account' : 'Add Account'),
+          centerTitle: true,
+        ),
+        body: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24.0,
+                    vertical: 16.0,
                   ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Color',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: ColorPalette.shared.map((color) {
-                      final isSelected =
-                          _selectedColor != null &&
-                          color.value == _selectedColor!.value;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedColor = color;
-                          });
-                        },
-                        child: Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isSelected
-                                  ? Colors.black
-                                  : Colors.transparent,
-                              width: 2,
-                            ),
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      focusNode: _nameFocusNode,
+                      decoration: InputDecoration(
+                        labelText: 'Name',
+                        border: InputBorder.none,
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.outline,
                           ),
-                          child: isSelected
-                              ? const Icon(Icons.check, color: Colors.white)
-                              : null,
                         ),
-                      );
-                    }).toList(),
-                  ),
-                  // Delete button - only show for custom accounts (not "main")
-                  if (widget.account != null && widget.account!.name != 'main')
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter an account name';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SizedBox(height: 32),
-                        TextButton(
-                          onPressed: _deleteAccount,
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            padding: EdgeInsets.zero,
+                        Text(
+                          'Currency',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.6),
                           ),
-                          child: const Text(
-                            'DELETE',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        ),
+                        const SizedBox(height: 4),
+                        InkWell(
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              PageRouteBuilder(
+                                transitionDuration: Duration.zero,
+                                reverseTransitionDuration: Duration.zero,
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        CurrencySelectionScreen(
+                                          selectedCurrency:
+                                              _currencyController.text,
+                                          onCurrencySelected:
+                                              (selectedCurrency) {
+                                                setState(() {
+                                                  _currencyController.text =
+                                                      selectedCurrency;
+                                                });
+                                              },
+                                        ),
+                              ),
+                            );
+                          },
+                          child: Builder(
+                            builder: (context) {
+                              final currency = FiatCurrency.list.firstWhere(
+                                (c) => c.code == _currencyController.text,
+                                orElse: () => FiatCurrency.list.first,
+                              );
+                              return Text(
+                                '${_currencyController.text} (${currency.symbol ?? ''})',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],
                     ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(
-                left: 16.0,
-                right: 16.0,
-                bottom: 64.0,
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: 200,
-                  child: ElevatedButton(
-                    onPressed: !_isFormValid ? null : _saveAccount,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 16,
-                        horizontal: 32,
-                      ),
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      disabledBackgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.2),
-                      disabledForegroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primary.withOpacity(0.5),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(40),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Color',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.6),
                       ),
                     ),
-                    child: const Text(
-                      'Save',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: ColorPalette.shared.map((color) {
+                        final isSelected =
+                            _selectedColor != null &&
+                            color.value == _selectedColor!.value;
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedColor = color;
+                            });
+                          },
+                          child: Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? Colors.black
+                                    : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                            child: isSelected
+                                ? const Icon(Icons.check, color: Colors.white)
+                                : null,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    // Delete button - only show for custom accounts (not "main")
+                    if (widget.account != null &&
+                        widget.account!.name != 'main')
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 32),
+                          TextButton(
+                            onPressed: _deleteAccount,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              padding: EdgeInsets.zero,
+                            ),
+                            child: const Text(
+                              'DELETE',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: 16.0,
+                  right: 16.0,
+                  bottom: 64.0,
+                ),
+                child: Center(
+                  child: SizedBox(
+                    width: 200,
+                    child: ElevatedButton(
+                      onPressed: !_isFormValid ? null : _saveAccount,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 32,
+                        ),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary,
+                        disabledBackgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.2),
+                        disabledForegroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.5),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(40),
+                        ),
+                      ),
+                      child: const Text(
+                        'Save',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

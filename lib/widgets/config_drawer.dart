@@ -6,8 +6,10 @@ import '../theme/theme_provider.dart';
 
 class ConfigDrawer extends StatelessWidget {
   final ThemeProvider? themeProvider;
+  final Future<bool> Function()? onWillNavigate;
 
-  const ConfigDrawer({Key? key, this.themeProvider}) : super(key: key);
+  const ConfigDrawer({Key? key, this.themeProvider, this.onWillNavigate})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -25,17 +27,38 @@ class ConfigDrawer extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.home_outlined),
               title: const Text('Home'),
-              onTap: () {
-                // Close drawer then return to root (home with period pickers)
+              onTap: () async {
+                // Check if navigation is allowed
+                if (onWillNavigate != null) {
+                  final canNavigate = await onWillNavigate!();
+                  if (!canNavigate) return;
+                }
+
+                // Get the root navigator for navigation
+                final rootNavigator = Navigator.of(
+                  context,
+                  rootNavigator: true,
+                );
+                // Pop the drawer
                 Navigator.of(context).pop();
-                Navigator.of(context).popUntil((route) => route.isFirst);
+                // Use root navigator to go back to home after drawer closes
+                rootNavigator.popUntil((route) {
+                  return route.isFirst;
+                });
               },
             ),
             if (themeProvider != null)
               ListTile(
                 leading: const Icon(Icons.account_balance_wallet_outlined),
                 title: const Text('Accounts'),
-                onTap: () {
+                onTap: () async {
+                  // Check if navigation is allowed
+                  if (onWillNavigate != null) {
+                    final canNavigate = await onWillNavigate!();
+                    if (!canNavigate) return;
+                  }
+
+                  Navigator.of(context).pop();
                   Navigator.push(
                     context,
                     PageRouteBuilder(
@@ -50,7 +73,13 @@ class ConfigDrawer extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.category_outlined),
               title: const Text('Categories'),
-              onTap: () {
+              onTap: () async {
+                // Check if navigation is allowed
+                if (onWillNavigate != null) {
+                  final canNavigate = await onWillNavigate!();
+                  if (!canNavigate) return;
+                }
+
                 Navigator.push(
                   context,
                   PageRouteBuilder(
@@ -66,7 +95,13 @@ class ConfigDrawer extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.settings_outlined),
                 title: const Text('Settings'),
-                onTap: () {
+                onTap: () async {
+                  // Check if navigation is allowed
+                  if (onWillNavigate != null) {
+                    final canNavigate = await onWillNavigate!();
+                    if (!canNavigate) return;
+                  }
+
                   Navigator.push(
                     context,
                     PageRouteBuilder(

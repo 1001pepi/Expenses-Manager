@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../theme/theme_provider.dart';
 import '../models/account.dart';
 import '../models/budget.dart';
+import '../models/expense.dart';
 import '../database/database_helper.dart';
 import 'add_budget_form.dart';
 import 'add_expense_form.dart';
+import 'package:image_picker/image_picker.dart';
 import '../widgets/config_drawer.dart';
 
 class AddFinancialItemScreen extends StatefulWidget {
@@ -45,6 +48,7 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
   final FocusNode _budgetAmountFocusNode = FocusNode();
   final FocusNode _expenseAmountFocusNode = FocusNode();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ImagePicker _picker = ImagePicker();
   final TextEditingController _budgetAmountController = TextEditingController();
   final TextEditingController _budgetCommentController =
       TextEditingController();
@@ -53,6 +57,7 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
   final TextEditingController _expenseCommentController =
       TextEditingController();
   bool _isBudgetFormDirty = false;
+  final List<XFile?> _expensePhotos = [null, null];
   bool _isExpenseFormDirty = false;
 
   bool get _isFormDirty => _isBudgetFormDirty || _isExpenseFormDirty;
@@ -132,15 +137,16 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
       initialIndex: widget.initialTabIndex,
       animationDuration: Duration.zero,
     );
+    _tabController.addListener(_refreshSaveState);
+    _tabController.animation?.addListener(_refreshSaveState);
     final periodDates = _calculatePeriodDates();
     _budgetStartDate = periodDates['start'];
     _budgetEndDate = periodDates['end'];
 
     // Add listeners to track form changes
     _budgetAmountController.addListener(() {
-      if (!_isBudgetFormDirty) {
-        setState(() => _isBudgetFormDirty = true);
-      }
+      if (!_isBudgetFormDirty) _isBudgetFormDirty = true;
+      _refreshSaveState();
     });
 
     _budgetCommentController.addListener(() {
@@ -151,8 +157,9 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
 
     _expenseAmountController.addListener(() {
       if (!_isExpenseFormDirty) {
-        setState(() => _isExpenseFormDirty = true);
+        _isExpenseFormDirty = true;
       }
+      _refreshSaveState();
     });
 
     _expenseCommentController.addListener(() {
@@ -172,6 +179,14 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
       });
     }
     _loadCategories();
+  }
+
+  void _unfocusFields() {
+    FocusScope.of(context).unfocus();
+  }
+
+  void _refreshSaveState() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadCategories() async {
@@ -204,6 +219,8 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     _budgetCommentController.dispose();
     _expenseAmountController.dispose();
     _expenseCommentController.dispose();
+    _tabController.removeListener(_refreshSaveState);
+    _tabController.animation?.removeListener(_refreshSaveState);
     super.dispose();
   }
 
@@ -240,10 +257,9 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     try {
       await DatabaseHelper.instance.createBudget(budget);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Budget saved successfully')),
-        );
-        Navigator.pop(context);
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -255,10 +271,47 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
   }
 
   Future<void> _saveExpense() async {
-    if (mounted) {
+    if (_selectedAccount == null || _selectedExpenseCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Expense saving not yet implemented')),
+        const SnackBar(content: Text('Please select an account and category')),
       );
+      return;
+    }
+
+    if (_expenseAmountController.text.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
+      return;
+    }
+
+    final expense = Expense(
+      accountId: _selectedAccount!.id!,
+      categoryId: _selectedExpenseCategory.id,
+      amount: double.parse(_expenseAmountController.text),
+      date: _selectedExpenseDate,
+      tags: _expenseSelectedTags.join(','),
+      comment: _expenseCommentController.text.isNotEmpty
+          ? _expenseCommentController.text
+          : null,
+      photo1Path: _expensePhotos[0]?.path,
+      photo2Path: _expensePhotos[1]?.path,
+      createdAt: DateTime.now(),
+    );
+
+    try {
+      await DatabaseHelper.instance.createExpense(expense);
+      if (mounted) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!mounted) return;
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving expense: $e')));
+      }
     }
   }
 
@@ -278,12 +331,12 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(fontSize: 18)),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Discard', style: TextStyle(fontSize: 18)),
+            child: const Text('Discard'),
           ),
         ],
       ),
@@ -294,6 +347,12 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isBudgetTab = _tabController.index == 0;
+    final isSaveEnabled =
+      isBudgetTab ? _isBudgetFormValid : _isExpenseFormValid;
+    final saveAction = isBudgetTab ? _saveBudget : _saveExpense;
+
     return PopScope(
       canPop: !_isFormDirty,
       onPopInvokedWithResult: (didPop, result) async {
@@ -309,14 +368,12 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
         drawerEnableOpenDragGesture: false,
         drawer: ConfigDrawer(themeProvider: widget.themeProvider),
         appBar: AppBar(
-          leading: Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () {
-                FocusScope.of(context).unfocus();
-                _scaffoldKey.currentState?.openDrawer();
-              },
-            ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
           ),
           actions: [
             TextButton(
@@ -327,149 +384,298 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
           title: const Text('Add Financial Item'),
           centerTitle: true,
         ),
-        body: Column(
-          children: [
-            Material(
-              color: Theme.of(context).colorScheme.surface,
-              child: TabBar(
-                controller: _tabController,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                unselectedLabelColor: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withOpacity(0.75),
-                dividerColor: Colors.transparent,
-                tabs: const [
-                  Tab(text: 'Budget'),
-                  Tab(text: 'Expense'),
-                ],
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          onPanDown: (_) => FocusScope.of(context).unfocus(),
+          child: Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.surface,
+                child: TabBar(
+                  controller: _tabController,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  unselectedLabelColor: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.75),
+                  dividerColor: Colors.transparent,
+                  tabs: const [
+                    Tab(text: 'Budget'),
+                    Tab(text: 'Expense'),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  AddBudgetForm(
-                    selectedAccount: _selectedAccount,
-                    categories: _categories,
-                    selectedCategory: _selectedBudgetCategory,
-                    selectedDate: _selectedBudgetDate,
-                    startDate: _budgetStartDate,
-                    endDate: _budgetEndDate,
-                    tags: _budgetTags,
-                    selectedTags: _budgetSelectedTags,
-                    defaultCurrency: widget.themeProvider?.defaultCurrency,
-                    themeProvider: widget.themeProvider,
-                    amountFocusNode: _budgetAmountFocusNode,
-                    amountController: _budgetAmountController,
-                    commentController: _budgetCommentController,
-                    onAccountSelected: (account) {
-                      setState(() => _selectedAccount = account);
-                    },
-                    onCategorySelected: (category) {
-                      setState(() {
-                        _selectedBudgetCategory = category;
-                        final categoryExists = _categories.any(
-                          (cat) => cat.id == category.id,
-                        );
-                        if (!categoryExists) {
-                          _categories.insert(0, category);
-                        } else {
-                          // Move existing category to front
-                          _categories.removeWhere(
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  // Allow horizontal swipe between Budget and Expense
+                  physics: null,
+                  children: [
+                    AddBudgetForm(
+                      selectedAccount: _selectedAccount,
+                      categories: _categories,
+                      selectedCategory: _selectedBudgetCategory,
+                      selectedDate: _selectedBudgetDate,
+                      startDate: _budgetStartDate,
+                      endDate: _budgetEndDate,
+                      tags: _budgetTags,
+                      selectedTags: _budgetSelectedTags,
+                      defaultCurrency: widget.themeProvider?.defaultCurrency,
+                      themeProvider: widget.themeProvider,
+                      amountFocusNode: _budgetAmountFocusNode,
+                      amountController: _budgetAmountController,
+                      commentController: _budgetCommentController,
+                      onAccountSelected: (account) {
+                        _unfocusFields();
+                        setState(() => _selectedAccount = account);
+                        _refreshSaveState();
+                      },
+                      onCategorySelected: (category) {
+                        _unfocusFields();
+                        setState(() {
+                          _selectedBudgetCategory = category;
+                          final categoryExists = _categories.any(
                             (cat) => cat.id == category.id,
                           );
-                          _categories.insert(0, category);
-                        }
-                      });
-                    },
-                    onDateSelected: (date) {
-                      setState(() => _selectedBudgetDate = date);
-                    },
-                    onStartDateSelected: (date) {
-                      setState(() => _budgetStartDate = date);
-                    },
-                    onEndDateSelected: (date) {
-                      setState(() => _budgetEndDate = date);
-                    },
-                    onAddTag: (tag) {
-                      setState(() {
-                        if (!_budgetTags.contains(tag)) {
-                          _budgetTags.insert(0, tag);
-                          _budgetSelectedTags.add(tag);
-                        }
-                      });
-                    },
-                    onToggleTag: (tag) {
-                      setState(() {
-                        if (_budgetSelectedTags.contains(tag)) {
-                          _budgetSelectedTags.remove(tag);
-                        } else {
-                          _budgetSelectedTags.add(tag);
-                        }
-                      });
-                    },
-                    onSave: _saveBudget,
-                    onCategoriesChanged: _refreshCategories,
-                  ),
-                  AddExpenseForm(
-                    categories: _categories,
-                    selectedCategory: _selectedExpenseCategory,
-                    selectedDate: _selectedExpenseDate,
-                    tags: _expenseTags,
-                    selectedTags: _expenseSelectedTags,
-                    defaultCurrency: widget.themeProvider?.defaultCurrency,
-                    themeProvider: widget.themeProvider,
-                    amountFocusNode: _expenseAmountFocusNode,
-                    onCategorySelected: (category) {
-                      setState(() {
-                        _selectedExpenseCategory = category;
-                        final categoryExists = _categories.any(
-                          (cat) => cat.id == category.id,
-                        );
-                        if (!categoryExists) {
-                          _categories.insert(0, category);
-                        } else {
-                          // Move existing category to front
-                          _categories.removeWhere(
+                          if (!categoryExists) {
+                            _categories.insert(0, category);
+                          } else {
+                            // Only move to front if not already in first 7
+                            final categoryIndex = _categories.indexWhere(
+                              (cat) => cat.id == category.id,
+                            );
+                            if (categoryIndex >= 7) {
+                              _categories.removeAt(categoryIndex);
+                              _categories.insert(0, category);
+                            }
+                          }
+                        });
+                        _refreshSaveState();
+                      },
+                      onDateSelected: (date) {
+                        _unfocusFields();
+                        setState(() => _selectedBudgetDate = date);
+                        _refreshSaveState();
+                      },
+                      onStartDateSelected: (date) {
+                        _unfocusFields();
+                        setState(() => _budgetStartDate = date);
+                        _refreshSaveState();
+                      },
+                      onEndDateSelected: (date) {
+                        _unfocusFields();
+                        setState(() => _budgetEndDate = date);
+                        _refreshSaveState();
+                      },
+                      onAddTag: (tag) {
+                        _unfocusFields();
+                        setState(() {
+                          if (!_budgetTags.contains(tag)) {
+                            _budgetTags.insert(0, tag);
+                            _budgetSelectedTags.add(tag);
+                          }
+                        });
+                        _refreshSaveState();
+                      },
+                      onToggleTag: (tag) {
+                        _unfocusFields();
+                        setState(() {
+                          if (_budgetSelectedTags.contains(tag)) {
+                            _budgetSelectedTags.remove(tag);
+                          } else {
+                            _budgetSelectedTags.add(tag);
+                          }
+                        });
+                        _refreshSaveState();
+                      },
+                      onSave: _saveBudget,
+                      onCategoriesChanged: _refreshCategories,
+                    ),
+                    AddExpenseForm(
+                      selectedAccount: _selectedAccount,
+                      photos: _expensePhotos,
+                      categories: _categories,
+                      selectedCategory: _selectedExpenseCategory,
+                      selectedDate: _selectedExpenseDate,
+                      tags: _expenseTags,
+                      selectedTags: _expenseSelectedTags,
+                      defaultCurrency: widget.themeProvider?.defaultCurrency,
+                      themeProvider: widget.themeProvider,
+                      amountFocusNode: _expenseAmountFocusNode,
+                      amountController: _expenseAmountController,
+                      commentController: _expenseCommentController,
+                      onAccountSelected: (account) {
+                        _unfocusFields();
+                        setState(() {
+                          _selectedAccount = account;
+                        });
+                        _refreshSaveState();
+                      },
+                      onPhotoTap: (slot) {
+                        _unfocusFields();
+                        _showExpensePhotoOptions(slot);
+                      },
+                      onPhotoDelete: (slot) {
+                        _unfocusFields();
+                        setState(() {
+                          _expensePhotos[slot] = null;
+                        });
+                        _refreshSaveState();
+                      },
+                      onCategorySelected: (category) {
+                        _unfocusFields();
+                        setState(() {
+                          _selectedExpenseCategory = category;
+                          final categoryExists = _categories.any(
                             (cat) => cat.id == category.id,
                           );
-                          _categories.insert(0, category);
-                        }
-                      });
-                    },
-                    onDateSelected: (date) {
-                      setState(() => _selectedExpenseDate = date);
-                    },
-                    onAddTag: (tag) {
-                      setState(() {
-                        if (!_expenseTags.contains(tag)) {
-                          _expenseTags.insert(0, tag);
-                          _expenseSelectedTags.add(tag);
-                        }
-                      });
-                    },
-                    onToggleTag: (tag) {
-                      setState(() {
-                        if (_expenseSelectedTags.contains(tag)) {
-                          _expenseSelectedTags.remove(tag);
-                        } else {
-                          _expenseSelectedTags.add(tag);
-                        }
-                      });
-                    },
-                    onSave: () {
-                      // TODO: Implement save logic
-                      Navigator.pop(context);
-                    },
-                    onCategoriesChanged: _refreshCategories,
-                  ),
-                ],
+                          if (!categoryExists) {
+                            _categories.insert(0, category);
+                          } else {
+                            // Only move to front if not already in first 7
+                            final categoryIndex = _categories.indexWhere(
+                              (cat) => cat.id == category.id,
+                            );
+                            if (categoryIndex >= 7) {
+                              _categories.removeAt(categoryIndex);
+                              _categories.insert(0, category);
+                            }
+                          }
+                        });
+                        _refreshSaveState();
+                      },
+                      onDateSelected: (date) {
+                        _unfocusFields();
+                        setState(() => _selectedExpenseDate = date);
+                        _refreshSaveState();
+                      },
+                      onAddTag: (tag) {
+                        _unfocusFields();
+                        setState(() {
+                          if (!_expenseTags.contains(tag)) {
+                            _expenseTags.insert(0, tag);
+                            _expenseSelectedTags.add(tag);
+                          }
+                        });
+                        _refreshSaveState();
+                      },
+                      onToggleTag: (tag) {
+                        _unfocusFields();
+                        setState(() {
+                          if (_expenseSelectedTags.contains(tag)) {
+                            _expenseSelectedTags.remove(tag);
+                          } else {
+                            _expenseSelectedTags.add(tag);
+                          }
+                        });
+                        _refreshSaveState();
+                      },
+                      onSave: _saveExpense,
+                      onCategoriesChanged: _refreshCategories,
+                    ),
+                  ],
+                ),
               ),
+            ],
+          ),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+        floatingActionButton: SizedBox(
+          width: 200,
+          child: FloatingActionButton.extended(
+            onPressed: isSaveEnabled
+                ? () async {
+                    FocusScope.of(context).unfocus();
+                    await saveAction();
+                  }
+                : null,
+            elevation: isSaveEnabled ? 2 : 0,
+            disabledElevation: 0,
+            backgroundColor: isSaveEnabled
+                ? theme.colorScheme.primary
+                : theme.colorScheme.primary.withOpacity(0.2),
+            foregroundColor: isSaveEnabled
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.primary.withOpacity(0.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(40),
             ),
-          ],
+            extendedPadding:
+                const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+            label: const Text(
+              'Save',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  bool get _isBudgetFormValid {
+    return _selectedAccount != null &&
+        _selectedBudgetCategory != null &&
+        _budgetAmountController.text.trim().isNotEmpty &&
+        _budgetStartDate != null &&
+        _budgetEndDate != null;
+  }
+
+  bool get _isExpenseFormValid {
+    return _selectedExpenseCategory != null &&
+        _expenseAmountController.text.trim().isNotEmpty;
+  }
+
+  Future<void> _showExpensePhotoOptions(int slot) async {
+    final allowCamera = !kIsWeb;
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              if (allowCamera)
+                ListTile(
+                  leading: const Icon(Icons.photo_camera),
+                  title: const Text('Take Photo'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _pickExpensePhoto(slot, ImageSource.camera);
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickExpensePhoto(slot, ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickExpensePhoto(int slot, ImageSource source) async {
+    try {
+      final picked = await _picker.pickImage(source: source);
+      if (picked != null && mounted) {
+        setState(() {
+          _expensePhotos[slot] = picked;
+        });
+        _refreshSaveState();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to pick photo: $e')),
+        );
+      }
+    }
   }
 }

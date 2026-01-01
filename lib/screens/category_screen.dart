@@ -80,9 +80,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
             );
           }
 
-          final categories = snapshot.data ?? [];
-          // Sort categories alphabetically by name
-          categories.sort((a, b) => a.name.compareTo(b.name));
+          final categories = List<Category>.of(snapshot.data ?? [])
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
 
           if (categories.isEmpty) {
             return Center(
