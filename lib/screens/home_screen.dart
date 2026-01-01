@@ -4,6 +4,10 @@ import 'dart:math' as math;
 import 'package:world_countries/world_countries.dart';
 
 import '../database/database_helper.dart';
+import '../widgets/calendar/date_picker_dialog.dart';
+import '../widgets/calendar/week_picker_dialog.dart';
+import '../widgets/calendar/month_picker_dialog.dart';
+import '../widgets/calendar/period_picker_dialog.dart';
 import '../models/account.dart';
 import '../models/budget.dart';
 import '../models/category.dart';
@@ -171,7 +175,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               tabs: const [
-                Tab(text: 'Budget'),
+                Tab(text: 'Budgets'),
                 Tab(text: 'Expenses'),
               ],
             ),
@@ -285,9 +289,19 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 onPressed: () async {
                   if (name == 'Period') {
                     if (_customPeriodRange == null) {
-                      final picked = await _showDateRangePicker(
-                        context,
-                        initialRange: _customPeriodRange,
+                      final now = DateTime.now();
+                      final picked = await showDialog<DateTimeRange>(
+                        context: context,
+                        builder: (context) => PeriodPickerDialog(
+                          initialRange: DateTimeRange(
+                            start: DateTime(now.year, now.month, now.day),
+                            end: DateTime(now.year, now.month, now.day + 6),
+                          ),
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                          helpText: 'Select Period',
+                          onRangeSelected: (_) {},
+                        ),
                       );
                       if (picked != null && mounted) {
                         setState(() {
@@ -350,7 +364,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           width: 1,
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -360,10 +374,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               onPressed: () => _updatePeriod(tabName, -1),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              iconSize: 26,
+              iconSize: 24,
             )
           else
-            const SizedBox(width: 32, height: 32),
+            const SizedBox(width: 28, height: 28),
           Expanded(
             child: GestureDetector(
               onTap: () => _showPeriodPicker(context, tabName),
@@ -371,7 +385,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 child: Text(
                   periodText,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.primary,
                   ),
@@ -386,10 +400,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               onPressed: () => _updatePeriod(tabName, 1),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              iconSize: 26,
+              iconSize: 24,
             )
           else
-            const SizedBox(width: 32, height: 32),
+            const SizedBox(width: 28, height: 28),
           if (showNavigation)
             IconButton(
               icon: const Icon(Icons.today),
@@ -397,7 +411,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               onPressed: () => _resetToCurrentPeriod(tabName),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              iconSize: 22,
+              iconSize: 20,
             ),
         ],
       ),
@@ -1219,19 +1233,46 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
     switch (tabName) {
       case 'Day':
-        final pickedDay = await _pickSingleDate(context, currentDate);
+        final pickedDay = await showDialog<DateTime>(
+          context: context,
+          builder: (context) => CustomDatePickerDialog(
+            initialDate: currentDate,
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2100),
+            helpText: 'Select Day',
+            onDateSelected: (_) {},
+          ),
+        );
         if (pickedDay != null && mounted) {
           setState(() => _periodDates[tabName] = pickedDay);
         }
         break;
       case 'Week':
-        final pickedWeek = await _pickSingleDate(context, currentDate);
+        final pickedWeek = await showDialog<DateTime>(
+          context: context,
+          builder: (context) => WeekPickerDialog(
+            initialDate: currentDate,
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2100),
+            helpText: 'Select Week',
+            onDateSelected: (_) {},
+          ),
+        );
         if (pickedWeek != null && mounted) {
           setState(() => _periodDates[tabName] = pickedWeek);
         }
         break;
       case 'Month':
-        final pickedMonth = await _pickSingleDate(context, currentDate);
+        final pickedMonth = await showDialog<DateTime>(
+          context: context,
+          builder: (context) => MonthPickerDialog(
+            initialDate: currentDate,
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2100),
+            helpText: 'Select Month',
+            onDateSelected: (_) {},
+          ),
+        );
         if (pickedMonth != null && mounted) {
           setState(
             () => _periodDates[tabName] = DateTime(
@@ -1243,17 +1284,24 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         }
         break;
       case 'Year':
-        final pickedYear = await _pickSingleDate(context, currentDate);
-        if (pickedYear != null && mounted) {
-          setState(
-            () => _periodDates[tabName] = DateTime(pickedYear.year, 1, 1),
-          );
-        }
+        // Year selection disabled - do nothing
         break;
       case 'Period':
-        final pickedRange = await _showDateRangePicker(
-          context,
-          initialRange: _customPeriodRange,
+        final now = DateTime.now();
+        final pickedRange = await showDialog<DateTimeRange>(
+          context: context,
+          builder: (context) => PeriodPickerDialog(
+            initialRange:
+                _customPeriodRange ??
+                DateTimeRange(
+                  start: DateTime(now.year, now.month, now.day),
+                  end: DateTime(now.year, now.month, now.day + 6),
+                ),
+            firstDate: DateTime(2000),
+            lastDate: DateTime(2100),
+            helpText: 'Select Period',
+            onRangeSelected: (_) {},
+          ),
         );
         if (pickedRange != null && mounted) {
           setState(() {
