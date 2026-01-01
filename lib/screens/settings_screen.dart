@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:world_countries/world_countries.dart';
 import '../theme/theme_provider.dart';
 import 'currency_selection_screen.dart';
+import '../widgets/config_drawer.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ThemeProvider themeProvider;
@@ -17,10 +18,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawerEnableOpenDragGesture: false,
+      drawer: ConfigDrawer(themeProvider: widget.themeProvider),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(ctx).openDrawer(),
+            tooltip: 'Open menu',
+          ),
         ),
         title: const Text('Settings'),
         centerTitle: true,

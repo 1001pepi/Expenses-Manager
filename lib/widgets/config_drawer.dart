@@ -101,6 +101,7 @@ class ConfigDrawer extends StatelessWidget {
                     final canNavigate = await onWillNavigate!();
                     if (!canNavigate) return;
                   }
+                  Navigator.of(context).pop();
 
                   Navigator.push(
                     context,

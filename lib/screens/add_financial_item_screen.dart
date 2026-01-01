@@ -9,6 +9,7 @@ import 'add_budget_form.dart';
 import 'add_expense_form.dart';
 import 'package:image_picker/image_picker.dart';
 import '../widgets/config_drawer.dart';
+import 'package:sqflite/sqflite.dart';
 
 class AddFinancialItemScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -262,11 +263,14 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
         Navigator.pop(context, true);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error saving budget: $e')));
-      }
+      if (!mounted) return;
+      final message = (e is DatabaseException && e.isUniqueConstraintError())
+          ? 'A budget already exists for this account, category, and date range.'
+          : 'Error saving budget: $e';
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -349,8 +353,9 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isBudgetTab = _tabController.index == 0;
-    final isSaveEnabled =
-      isBudgetTab ? _isBudgetFormValid : _isExpenseFormValid;
+    final isSaveEnabled = isBudgetTab
+        ? _isBudgetFormValid
+        : _isExpenseFormValid;
     final saveAction = isBudgetTab ? _saveBudget : _saveExpense;
 
     return PopScope(
@@ -394,7 +399,10 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
                 color: Theme.of(context).colorScheme.surface,
                 child: TabBar(
                   controller: _tabController,
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   unselectedLabelColor: Theme.of(
                     context,
@@ -601,8 +609,10 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(40),
             ),
-            extendedPadding:
-                const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+            extendedPadding: const EdgeInsets.symmetric(
+              vertical: 16,
+              horizontal: 32,
+            ),
             label: const Text(
               'Save',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -672,9 +682,9 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Unable to pick photo: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Unable to pick photo: $e')));
       }
     }
   }

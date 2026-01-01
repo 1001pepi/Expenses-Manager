@@ -16,8 +16,9 @@ import '../theme/theme_provider.dart';
 import '../utils/date_format_utils.dart';
 import '../widgets/config_drawer.dart';
 import 'budget_details_screen.dart';
-import 'edit_budget_screen.dart';
 import 'add_financial_item_screen.dart';
+import 'expense_group_list_screen.dart';
+import 'budget_group_list_screen.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({
@@ -39,6 +40,113 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   String _selectedTab = 'Month';
   late TabController _mainTabController;
   List<dynamic>? _cachedBudgetData;
+  List<dynamic>? _cachedExpenseData;
+  bool _mergeByCategory = false;
+  bool _showRemaining = false;
+
+  // Groups expenses by category and account for aggregated list view.
+  List<_ExpenseGroup> _groupExpenses(List<Expense> expenses) {
+    final Map<String, _ExpenseGroup> grouped = {};
+
+    for (final expense in expenses) {
+      final key = '${expense.categoryId}_${expense.accountId}';
+      grouped.putIfAbsent(
+        key,
+        () => _ExpenseGroup(
+          categoryId: expense.categoryId,
+          accountId: expense.accountId,
+          expenses: [],
+        ),
+      );
+      grouped[key]!.expenses.add(expense);
+    }
+
+    return grouped.values.toList();
+  }
+
+  List<_ExpenseGroup> _groupExpensesByCategory(List<Expense> expenses) {
+    final Map<int?, _ExpenseGroup> grouped = {};
+    for (final expense in expenses) {
+      final key = expense.categoryId;
+      grouped.putIfAbsent(
+        key,
+        () => _ExpenseGroup(
+          categoryId: expense.categoryId,
+          accountId: null,
+          expenses: [],
+        ),
+      );
+      grouped[key]!.expenses.add(expense);
+    }
+    return grouped.values.toList();
+  }
+
+  List<_RemainingGroup> _calculateRemainingByCategory(
+    List<Budget> budgets,
+    List<Expense> expenses,
+  ) {
+    // Group budgets by category and account
+    final Map<String, double> budgetsByCategoryAccount = {};
+    for (final budget in budgets) {
+      final key = '${budget.categoryId}_${budget.accountId}';
+      budgetsByCategoryAccount[key] =
+          (budgetsByCategoryAccount[key] ?? 0) + budget.amount;
+    }
+
+    // Group expenses by category and account
+    final Map<String, double> expensesByCategoryAccount = {};
+    for (final expense in expenses) {
+      final key = '${expense.categoryId}_${expense.accountId}';
+      expensesByCategoryAccount[key] =
+          (expensesByCategoryAccount[key] ?? 0) + expense.amount;
+    }
+
+    // Create remaining groups for each category-account combination with a budget
+    final List<_RemainingGroup> remaining = [];
+    for (final entry in budgetsByCategoryAccount.entries) {
+      final key = entry.key;
+      final parts = key.split('_');
+      final categoryId = int.tryParse(parts[0]);
+      final accountId = int.tryParse(parts[1]);
+      final budgetAmount = entry.value;
+      final spentAmount = expensesByCategoryAccount[key] ?? 0;
+      remaining.add(
+        _RemainingGroup(
+          categoryId: categoryId,
+          accountId: accountId,
+          budgetAmount: budgetAmount,
+          spentAmount: spentAmount,
+        ),
+      );
+    }
+
+    return remaining;
+  }
+
+  List<_RemainingGroup> _mergeRemainingByCategory(
+    List<_RemainingGroup> remainingGroups,
+  ) {
+    final Map<int?, _RemainingGroup> merged = {};
+    for (final group in remainingGroups) {
+      if (merged.containsKey(group.categoryId)) {
+        final existing = merged[group.categoryId]!;
+        merged[group.categoryId] = _RemainingGroup(
+          categoryId: group.categoryId,
+          accountId: null, // null indicates merged accounts
+          budgetAmount: existing.budgetAmount + group.budgetAmount,
+          spentAmount: existing.spentAmount + group.spentAmount,
+        );
+      } else {
+        merged[group.categoryId] = _RemainingGroup(
+          categoryId: group.categoryId,
+          accountId: null,
+          budgetAmount: group.budgetAmount,
+          spentAmount: group.spentAmount,
+        );
+      }
+    }
+    return merged.values.toList();
+  }
 
   @override
   void initState() {
@@ -58,35 +166,21 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     };
   }
 
-  List<int> _allocatePercentages(List<Budget> budgets, double total) {
-    if (total <= 0 || budgets.isEmpty) {
-      return List<int>.filled(budgets.length, 0);
+  List<_BudgetGroup> _groupBudgetsByCategory(List<Budget> budgets) {
+    final Map<int?, _BudgetGroup> grouped = {};
+    for (final budget in budgets) {
+      final key = budget.categoryId;
+      grouped.putIfAbsent(
+        key,
+        () => _BudgetGroup(
+          categoryId: budget.categoryId,
+          accountId: null,
+          budgets: [],
+        ),
+      );
+      grouped[key]!.budgets.add(budget);
     }
-
-    final allocations = <int>[];
-    final remainders = <Map<String, dynamic>>[];
-    int floorSum = 0;
-
-    for (int i = 0; i < budgets.length; i++) {
-      final raw = (budgets[i].amount / total) * 100;
-      final base = raw.floor();
-      allocations.add(base);
-      floorSum += base;
-      remainders.add({'index': i, 'remainder': raw - base});
-    }
-
-    int remaining = 100 - floorSum;
-    remainders.sort(
-      (a, b) => (b['remainder'] as double).compareTo(a['remainder'] as double),
-    );
-
-    for (int j = 0; j < remainders.length && remaining > 0; j++) {
-      final idx = remainders[j]['index'] as int;
-      allocations[idx] += 1;
-      remaining -= 1;
-    }
-
-    return allocations;
+    return grouped.values.toList();
   }
 
   @override
@@ -480,18 +574,57 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
         filteredBudgets.sort((a, b) => b.amount.compareTo(a.amount));
 
-        final totalBudgetAmount = filteredBudgets.fold<double>(
+        final displayBudgets =
+            (_mergeByCategory
+                  ? _groupBudgetsByCategory(filteredBudgets)
+                  : filteredBudgets
+                        .map(
+                          (b) => _BudgetGroup(
+                            categoryId: b.categoryId,
+                            accountId: b.accountId,
+                            budgets: [b],
+                          ),
+                        )
+                        .toList())
+              ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+        final totalBudgetAmount = displayBudgets.fold<double>(
           0,
-          (sum, budget) => sum + budget.amount,
+          (sum, group) => sum + group.totalAmount,
         );
 
-        final percentAllocations = _allocatePercentages(
-          filteredBudgets,
-          totalBudgetAmount,
-        );
+        final categorySlices = _groupBudgetsByCategory(filteredBudgets)
+          ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+        final percentAllocations = <int>[];
+        if (totalBudgetAmount > 0 && displayBudgets.isNotEmpty) {
+          final remainders = <Map<String, dynamic>>[];
+          int floorSum = 0;
+
+          for (int i = 0; i < displayBudgets.length; i++) {
+            final raw =
+                (displayBudgets[i].totalAmount / totalBudgetAmount) * 100;
+            final base = raw.floor();
+            percentAllocations.add(base);
+            floorSum += base;
+            remainders.add({'index': i, 'remainder': raw - base});
+          }
+
+          int remaining = 100 - floorSum;
+          remainders.sort(
+            (a, b) =>
+                (b['remainder'] as double).compareTo(a['remainder'] as double),
+          );
+
+          for (int j = 0; j < remainders.length && remaining > 0; j++) {
+            final idx = remainders[j]['index'] as int;
+            percentAllocations[idx] += 1;
+            remaining -= 1;
+          }
+        }
 
         final primaryAccount = filteredBudgets.isNotEmpty
-            ? accountMap[filteredBudgets[0].accountId]
+            ? accountMap[filteredBudgets.first.accountId]
             : null;
         final totalCurrencySymbol = _currencySymbol(primaryAccount?.currency);
 
@@ -507,7 +640,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'No Budget',
+                  'No Budgets',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -534,21 +667,110 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              padding: const EdgeInsets.only(top: 0.0, bottom: 8.0),
               child: _BudgetPieChart(
                 total: totalBudgetAmount,
                 slices: [
-                  for (final b in filteredBudgets)
+                  for (final g in categorySlices)
                     _PieSliceData(
-                      value: b.amount,
+                      value: g.totalAmount,
                       color: Color(
-                        categoryMap[b.categoryId]?.color ??
+                        categoryMap[g.categoryId]?.color ??
                             Theme.of(context).colorScheme.primary.value,
                       ),
                     ),
                 ],
                 label:
                     '$totalCurrencySymbol${_formatAmount(totalBudgetAmount)}',
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    setState(() => _mergeByCategory = !_mergeByCategory);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _mergeByCategory
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.primaryContainer.withOpacity(0.55)
+                          : Theme.of(context).colorScheme.surfaceVariant,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary
+                            .withOpacity(_mergeByCategory ? 0.5 : 0.25),
+                        width: 1,
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: _mergeByCategory,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: const VisualDensity(
+                            horizontal: -4,
+                            vertical: -4,
+                          ),
+                          side: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.45),
+                            width: 1.3,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          fillColor: MaterialStateProperty.resolveWith((
+                            states,
+                          ) {
+                            if (states.contains(MaterialState.selected)) {
+                              return Theme.of(context).colorScheme.primary;
+                            }
+                            if (states.contains(MaterialState.pressed) ||
+                                states.contains(MaterialState.hovered)) {
+                              return Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.3);
+                            }
+                            return Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.12);
+                          }),
+                          checkColor: Theme.of(context).colorScheme.onPrimary,
+                          onChanged: (val) {
+                            setState(() => _mergeByCategory = val ?? false);
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Merge accounts',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: _mergeByCategory
+                                ? Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimaryContainer
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.82),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
             Expanded(
@@ -559,20 +781,26 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                   top: 4,
                   bottom: 100,
                 ),
-                itemCount: filteredBudgets.length,
+                itemCount: displayBudgets.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 4),
                 itemBuilder: (context, index) {
-                  final budget = filteredBudgets[index];
-                  final category = categoryMap[budget.categoryId];
-                  final account = accountMap[budget.accountId];
+                  final group = displayBudgets[index];
+                  final category = categoryMap[group.categoryId];
+                  final account = accountMap[group.accountId];
+                  final accountForDisplay =
+                      _mergeByCategory && group.budgets.length == 1
+                      ? accountMap[group.budgets.first.accountId]
+                      : account;
                   final categoryColor = category != null
                       ? Color(category.color)
                       : Theme.of(context).colorScheme.primary;
                   final categoryIcon = category != null
                       ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
                       : Icons.category;
-                  final currencySymbol = _currencySymbol(account?.currency);
-                  final amountText = _formatAmount(budget.amount);
+                  final rowCurrencySymbol = accountForDisplay != null
+                      ? _currencySymbol(accountForDisplay.currency)
+                      : totalCurrencySymbol;
+                  final amountText = _formatAmount(group.totalAmount);
                   final percentValue = index < percentAllocations.length
                       ? percentAllocations[index]
                       : 0;
@@ -583,12 +811,32 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                   ).colorScheme.surfaceVariant;
                   return GestureDetector(
                     onTap: () async {
+                      if (group.budgets.length > 1) {
+                        final updated = await Navigator.push<bool>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => BudgetGroupListScreen(
+                              budgets: group.budgets,
+                              account: account,
+                              category: category,
+                              themeProvider: widget.themeProvider,
+                            ),
+                          ),
+                        );
+
+                        if (updated == true && mounted) {
+                          setState(() {});
+                        }
+                        return;
+                      }
+
+                      final targetBudget = group.budgets.first;
                       final updated = await Navigator.push<bool>(
                         context,
                         MaterialPageRoute(
                           builder: (_) => BudgetDetailsScreen(
-                            budget: budget,
-                            account: account,
+                            budget: targetBudget,
+                            account: accountForDisplay,
                             category: category,
                             themeProvider: widget.themeProvider,
                           ),
@@ -671,13 +919,30 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                         SizedBox(
                                           width: accountWidth,
                                           child: Text(
-                                            account?.name ?? 'Account',
+                                            _mergeByCategory &&
+                                                    group.budgets.length > 1
+                                                ? 'Merged'
+                                                : _mergeByCategory &&
+                                                      group.budgets.length == 1
+                                                ? (accountForDisplay?.name ??
+                                                      'Account')
+                                                : account?.name ?? 'Account',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             textAlign: TextAlign.left,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w500,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
                                               fontSize: 13,
+                                              color:
+                                                  _mergeByCategory &&
+                                                      group.budgets.length > 1
+                                                  ? Theme.of(
+                                                      context,
+                                                    ).colorScheme.secondary
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurface
+                                                        .withOpacity(0.8),
                                             ),
                                           ),
                                         ),
@@ -701,7 +966,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                         SizedBox(
                                           width: amountWidth,
                                           child: Text(
-                                            '$currencySymbol$amountText',
+                                            '$rowCurrencySymbol$amountText',
                                             textAlign: TextAlign.right,
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w700,
@@ -735,24 +1000,53 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     DateTime periodDate,
     DateTimeRange? periodRange,
   ) {
+    final theme = Theme.of(context);
     return FutureBuilder(
-      future: Future.wait([
-        DatabaseHelper.instance.getAllExpenses(),
-        DatabaseHelper.instance.getAllCategories(),
-        DatabaseHelper.instance.getAllAccounts(),
-      ]),
+      future: _showRemaining
+          ? Future.wait([
+              DatabaseHelper.instance.getAllExpenses(),
+              DatabaseHelper.instance.getAllCategories(),
+              DatabaseHelper.instance.getAllAccounts(),
+              DatabaseHelper.instance.getAllBudgets(),
+            ])
+          : Future.wait([
+              DatabaseHelper.instance.getAllExpenses(),
+              DatabaseHelper.instance.getAllCategories(),
+              DatabaseHelper.instance.getAllAccounts(),
+            ]),
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
         if (snapshot.hasError) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        final expenses = snapshot.data?[0] as List<Expense>? ?? [];
-        final categories = snapshot.data?[1] as List<Category>? ?? [];
-        final accounts = snapshot.data?[2] as List<Account>? ?? [];
+        List<dynamic>? results;
+        if (snapshot.hasData) {
+          results = snapshot.data;
+          _cachedExpenseData = results;
+        } else if ((snapshot.connectionState == ConnectionState.waiting ||
+                snapshot.connectionState == ConnectionState.active) &&
+            _cachedExpenseData != null) {
+          results = _cachedExpenseData;
+        } else if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        } else {
+          return const Center(child: Text('No data'));
+        }
+
+        results = results ?? [<Expense>[], <Category>[], <Account>[]];
+        final expenses = results[0] as List<Expense>;
+        final categories = results.length > 1
+            ? results[1] as List<Category>
+            : <Category>[];
+        final accounts = results.length > 2
+            ? results[2] as List<Account>
+            : <Account>[];
+
+        // Convert budget maps to Budget objects if available
+        // Keep raw budget maps for filtering
+        final budgetMaps = _showRemaining && results.length > 3
+            ? results[3] as List<dynamic>
+            : <dynamic>[];
 
         final categoryMap = {
           for (final c in categories)
@@ -772,15 +1066,83 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
         filteredExpenses.sort((a, b) => b.date.compareTo(a.date));
 
-        final totalExpenseAmount = filteredExpenses.fold<double>(
+        // Filter budgets by period if showing remaining view
+        final filteredBudgets = _showRemaining
+            ? _filterBudgetsByPeriod(
+                budgetMaps,
+                selectedTab,
+                periodDate,
+                periodRange,
+              )
+            : <Budget>[];
+
+        final groupedExpenses =
+            (_mergeByCategory
+                  ? _groupExpensesByCategory(filteredExpenses)
+                  : _groupExpenses(filteredExpenses))
+              ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+        final categorySlices = _groupExpensesByCategory(filteredExpenses)
+          ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+        final totalExpenseAmount = groupedExpenses.fold<double>(
           0,
-          (sum, expense) => sum + expense.amount,
+          (sum, group) => sum + group.totalAmount,
         );
 
+        // Calculate remaining budget groups
+        final remainingGroups = _showRemaining
+            ? () {
+                final groups = _calculateRemainingByCategory(
+                  filteredBudgets,
+                  filteredExpenses,
+                );
+                final processedGroups = _mergeByCategory
+                    ? _mergeRemainingByCategory(groups)
+                    : groups;
+                return processedGroups
+                  ..sort((a, b) => b.remaining.compareTo(a.remaining));
+              }()
+            : <_RemainingGroup>[];
+
+        final percentAllocations = <int>[];
+        if (totalExpenseAmount > 0 && groupedExpenses.isNotEmpty) {
+          final remainders = <Map<String, dynamic>>[];
+          int floorSum = 0;
+
+          for (int i = 0; i < groupedExpenses.length; i++) {
+            final raw =
+                (groupedExpenses[i].totalAmount / totalExpenseAmount) * 100;
+            final base = raw.floor();
+            percentAllocations.add(base);
+            floorSum += base;
+            remainders.add({'index': i, 'remainder': raw - base});
+          }
+
+          int remaining = 100 - floorSum;
+          remainders.sort(
+            (a, b) =>
+                (b['remainder'] as double).compareTo(a['remainder'] as double),
+          );
+
+          for (int j = 0; j < remainders.length && remaining > 0; j++) {
+            final idx = remainders[j]['index'] as int;
+            percentAllocations[idx] += 1;
+            remaining -= 1;
+          }
+        }
+
         final primaryAccount = filteredExpenses.isNotEmpty
-            ? accountMap[filteredExpenses[0].accountId]
+            ? accountMap[filteredExpenses.first.accountId]
             : null;
         final totalCurrencySymbol = _currencySymbol(primaryAccount?.currency);
+
+        // Calculate total remaining for pie chart when showing remaining view
+        final totalRemaining = _showRemaining
+            ? remainingGroups.fold<double>(
+                0,
+                (sum, group) => sum + group.remaining,
+              )
+            : 0.0;
 
         if (filteredExpenses.isEmpty) {
           return Padding(
@@ -821,41 +1183,215 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 12.0,
-                horizontal: 16.0,
+              padding: const EdgeInsets.only(top: 0.0, bottom: 6.0),
+              child: _BudgetPieChart(
+                total: _showRemaining ? totalRemaining : totalExpenseAmount,
+                slices: _showRemaining
+                    ? [
+                        for (final g in remainingGroups)
+                          if (g.remaining > 0)
+                            _PieSliceData(
+                              value: g.remaining,
+                              color: Color(
+                                categoryMap[g.categoryId]?.color ??
+                                    Theme.of(context).colorScheme.primary.value,
+                              ),
+                            ),
+                      ]
+                    : [
+                        for (final g in categorySlices)
+                          _PieSliceData(
+                            value: g.totalAmount,
+                            color: Color(
+                              categoryMap[g.categoryId]?.color ??
+                                  Theme.of(context).colorScheme.primary.value,
+                            ),
+                          ),
+                      ],
+                label: _showRemaining
+                    ? '$totalCurrencySymbol${_formatAmount(totalRemaining)}'
+                    : '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
+                labelColor: _showRemaining && totalRemaining < 0
+                    ? Theme.of(context).colorScheme.error
+                    : null,
               ),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primary.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.25),
-                    width: 1,
-                  ),
-                ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Total Expenses',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        setState(() => _mergeByCategory = !_mergeByCategory);
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _mergeByCategory
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primaryContainer.withOpacity(0.55)
+                              : Theme.of(context).colorScheme.surfaceVariant,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary
+                                .withOpacity(_mergeByCategory ? 0.5 : 0.25),
+                            width: 1,
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Checkbox(
+                              value: _mergeByCategory,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: const VisualDensity(
+                                horizontal: -4,
+                                vertical: -4,
+                              ),
+                              side: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.45),
+                                width: 1.3,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              fillColor: MaterialStateProperty.resolveWith((
+                                states,
+                              ) {
+                                if (states.contains(MaterialState.selected)) {
+                                  return Theme.of(context).colorScheme.primary;
+                                }
+                                if (states.contains(MaterialState.pressed) ||
+                                    states.contains(MaterialState.hovered)) {
+                                  return Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.3);
+                                }
+                                return Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.12);
+                              }),
+                              checkColor: Theme.of(
+                                context,
+                              ).colorScheme.onPrimary,
+                              onChanged: (val) {
+                                setState(() => _mergeByCategory = val ?? false);
+                              },
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Merge accounts',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: _mergeByCategory
+                                    ? Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(0.82),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    Text(
-                      '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
+                    const SizedBox(width: 10),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        setState(() => _showRemaining = !_showRemaining);
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _showRemaining
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primaryContainer.withOpacity(0.55)
+                              : Theme.of(context).colorScheme.surfaceVariant,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary
+                                .withOpacity(_showRemaining ? 0.5 : 0.25),
+                            width: 1,
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Checkbox(
+                              value: _showRemaining,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: const VisualDensity(
+                                horizontal: -4,
+                                vertical: -4,
+                              ),
+                              side: BorderSide(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.45),
+                                width: 1.3,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              fillColor: MaterialStateProperty.resolveWith((
+                                states,
+                              ) {
+                                if (states.contains(MaterialState.selected)) {
+                                  return Theme.of(context).colorScheme.primary;
+                                }
+                                if (states.contains(MaterialState.pressed) ||
+                                    states.contains(MaterialState.hovered)) {
+                                  return Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withOpacity(0.3);
+                                }
+                                return Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.12);
+                              }),
+                              checkColor: Theme.of(
+                                context,
+                              ).colorScheme.onPrimary,
+                              onChanged: (val) {
+                                setState(() => _showRemaining = val ?? false);
+                              },
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Remaining',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: _showRemaining
+                                    ? Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(0.82),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -863,209 +1399,235 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               ),
             ),
             Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.only(
-                  left: 4,
-                  right: 4,
-                  top: 4,
-                  bottom: 100,
-                ),
-                itemCount: filteredExpenses.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 4),
-                itemBuilder: (context, index) {
-                  final expense = filteredExpenses[index];
-                  final category = categoryMap[expense.categoryId];
-                  final account = accountMap[expense.accountId];
-                  final categoryColor = category != null
-                      ? Color(category.color)
-                      : Theme.of(context).colorScheme.primary;
-                  final categoryIcon = category != null
-                      ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
-                      : Icons.category;
-                  final currencySymbol = _currencySymbol(account?.currency);
-                  final amountText = _formatAmount(expense.amount);
-
-                  final cardColor = Theme.of(
-                    context,
-                  ).colorScheme.surfaceVariant;
-                  return GestureDetector(
-                    onTap: () async {
-                      // TODO: Navigate to expense details/edit screen
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withOpacity(0.12),
-                          width: 1.2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.shadow.withOpacity(0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+              child: _showRemaining
+                  ? _buildRemainingList(
+                      remainingGroups,
+                      categoryMap,
+                      accountMap,
+                      totalCurrencySymbol,
+                      theme,
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.only(
+                        left: 4,
+                        right: 4,
+                        top: 4,
+                        bottom: 100,
                       ),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final rowWidth = constraints.maxWidth;
-                          final iconWidth = rowWidth * 0.10;
-                          final gapSmall = rowWidth * 0.035;
-                          final nameWidth = rowWidth * 0.40;
-                          final accountWidth = rowWidth * 0.18;
-                          final gapMedium = rowWidth * 0.03;
-                          final amountWidth = rowWidth * 0.20;
+                      itemCount: groupedExpenses.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 4),
+                      itemBuilder: (context, index) {
+                        final group = groupedExpenses[index];
+                        final category = categoryMap[group.categoryId];
+                        final account = accountMap[group.accountId];
+                        final accountForDisplay =
+                            _mergeByCategory && group.expenses.length == 1
+                            ? accountMap[group.expenses.first.accountId]
+                            : account;
+                        final categoryColor = category != null
+                            ? Color(category.color)
+                            : Theme.of(context).colorScheme.primary;
+                        final categoryIcon = category != null
+                            ? IconData(
+                                category.iconCode,
+                                fontFamily: 'MaterialIcons',
+                              )
+                            : Icons.category;
+                        final rowCurrencySymbol = accountForDisplay != null
+                            ? _currencySymbol(accountForDisplay.currency)
+                            : totalCurrencySymbol;
+                        final amountText = _formatAmount(group.totalAmount);
 
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: iconWidth,
-                                child: Center(
-                                  child: CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: categoryColor,
-                                    child: Icon(
-                                      categoryIcon,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
+                        final cardColor = theme.colorScheme.surfaceVariant;
+                        return GestureDetector(
+                          onTap: () async {
+                            final updated = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ExpenseGroupListScreen(
+                                  expenses: group.expenses,
+                                  account: account,
+                                  category: category,
+                                  themeProvider: widget.themeProvider,
+                                  selectedTab: selectedTab,
+                                  periodDate: periodDate,
+                                  periodRange: periodRange,
                                 ),
                               ),
-                              SizedBox(width: gapSmall),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                            );
+                            if (updated == true && mounted) setState(() {});
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: cardColor,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.12),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.shadow.withOpacity(0.08),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final rowWidth = constraints.maxWidth;
+                                final iconWidth = rowWidth * 0.10;
+                                final gapSmall = rowWidth * 0.035;
+                                final nameWidth = rowWidth * 0.37;
+                                final accountWidth = rowWidth * 0.16;
+                                final percentWidth = rowWidth * 0.12;
+                                final gapMedium = rowWidth * 0.03;
+                                final amountWidth = rowWidth * 0.15;
+
+                                final percentValue =
+                                    index < percentAllocations.length
+                                    ? percentAllocations[index]
+                                    : 0;
+                                final percentText = '$percentValue%';
+
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        SizedBox(
-                                          width: nameWidth,
-                                          child: Text(
-                                            category?.name ?? 'Expense',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                            ),
+                                    SizedBox(
+                                      width: iconWidth,
+                                      child: Center(
+                                        child: CircleAvatar(
+                                          radius: 18,
+                                          backgroundColor: categoryColor,
+                                          child: Icon(
+                                            categoryIcon,
+                                            color: Colors.white,
+                                            size: 20,
                                           ),
                                         ),
-                                        SizedBox(
-                                          width: accountWidth,
-                                          child: Text(
-                                            account?.name ?? 'Account',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            textAlign: TextAlign.left,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w500,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(width: gapMedium),
-                                        SizedBox(
-                                          width: amountWidth,
-                                          child: Text(
-                                            '$currencySymbol$amountText',
-                                            textAlign: TextAlign.right,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                      ),
                                     ),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.calendar_today,
-                                          size: 12,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withOpacity(0.6),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          DateFormatUtils.formatDate(
-                                            expense.date,
-                                          ),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurface
-                                                .withOpacity(0.6),
-                                          ),
-                                        ),
-                                        if (expense.photo1Path != null ||
-                                            expense.photo2Path != null) ...[
-                                          const SizedBox(width: 8),
-                                          Icon(
-                                            Icons.photo,
-                                            size: 12,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurface
-                                                .withOpacity(0.6),
+                                    SizedBox(width: gapSmall),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              SizedBox(
+                                                width: nameWidth,
+                                                child: Text(
+                                                  category?.name ?? 'Expense',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width: accountWidth,
+                                                child: Builder(
+                                                  builder: (context) {
+                                                    // Check if expenses come from different accounts
+                                                    final hasMultipleAccounts =
+                                                        _mergeByCategory &&
+                                                        group
+                                                            .expenses
+                                                            .isNotEmpty &&
+                                                        group.expenses
+                                                                .map(
+                                                                  (e) => e
+                                                                      .accountId,
+                                                                )
+                                                                .toSet()
+                                                                .length >
+                                                            1;
+
+                                                    final displayText =
+                                                        hasMultipleAccounts
+                                                        ? 'Merged'
+                                                        : (accountForDisplay
+                                                                  ?.name ??
+                                                              'Account');
+
+                                                    return Text(
+                                                      displayText,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      textAlign: TextAlign.left,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        fontSize: 13,
+                                                        color:
+                                                            hasMultipleAccounts
+                                                            ? Theme.of(context)
+                                                                  .colorScheme
+                                                                  .secondary
+                                                            : Theme.of(context)
+                                                                  .colorScheme
+                                                                  .onSurface
+                                                                  .withOpacity(
+                                                                    0.8,
+                                                                  ),
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                              SizedBox(width: gapSmall),
+                                              SizedBox(
+                                                width: percentWidth,
+                                                child: Text(
+                                                  percentText,
+                                                  textAlign: TextAlign.left,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                        .withOpacity(0.85),
+                                                  ),
+                                                ),
+                                              ),
+                                              SizedBox(width: gapMedium),
+                                              SizedBox(
+                                                width: amountWidth,
+                                                child: Text(
+                                                  '$rowCurrencySymbol$amountText',
+                                                  textAlign: TextAlign.right,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ],
-                                      ],
+                                      ),
                                     ),
-                                    if (expense.tags.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Tags: ${expense.tags}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withOpacity(0.7),
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                    if (expense.comment != null &&
-                                        expense.comment!.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        expense.comment!,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withOpacity(0.6),
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
                                   ],
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         );
@@ -1079,12 +1641,22 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
       final integerPart = parts[0];
       final decimalPart = parts.length > 1 ? '.${parts[1]}' : '';
 
+      // Handle negative sign separately
+      final isNegative = integerPart.startsWith('-');
+      final absoluteInteger = isNegative
+          ? integerPart.substring(1)
+          : integerPart;
+
       final buffer = StringBuffer();
-      for (int i = 0; i < integerPart.length; i++) {
-        if (i > 0 && (integerPart.length - i) % 3 == 0) {
+      if (isNegative) {
+        buffer.write('-');
+      }
+
+      for (int i = 0; i < absoluteInteger.length; i++) {
+        if (i > 0 && (absoluteInteger.length - i) % 3 == 0) {
           buffer.write(',');
         }
-        buffer.write(integerPart[i]);
+        buffer.write(absoluteInteger[i]);
       }
       return buffer.toString() + decimalPart;
     }
@@ -1098,6 +1670,227 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         ? trimmed.substring(0, trimmed.length - 1)
         : trimmed;
     return addCommas(cleaned);
+  }
+
+  Widget _buildRemainingList(
+    List<_RemainingGroup> remainingGroups,
+    Map<int?, Category> categoryMap,
+    Map<int?, Account> accountMap,
+    String totalCurrencySymbol,
+    ThemeData theme,
+  ) {
+    if (remainingGroups.isEmpty) {
+      return Center(
+        child: Text(
+          'No budgets for this period',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.only(left: 4, right: 4, top: 4, bottom: 100),
+      itemCount: remainingGroups.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 4),
+      itemBuilder: (context, index) {
+        final remaining = remainingGroups[index];
+        final category = categoryMap[remaining.categoryId];
+        final account = accountMap[remaining.accountId];
+        final categoryColor = category != null
+            ? Color(category.color)
+            : Theme.of(context).colorScheme.primary;
+        final categoryIcon = category != null
+            ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
+            : Icons.category;
+
+        final budgetText = _formatAmount(remaining.budgetAmount);
+        final spentText = _formatAmount(remaining.spentAmount);
+        final remainingText = _formatAmount(remaining.remaining);
+
+        final cardColor = theme.colorScheme.surfaceVariant;
+        final isOverBudget = remaining.remaining < 0;
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final rowWidth = constraints.maxWidth;
+              final iconWidth = rowWidth * 0.10;
+              final gapSmall = rowWidth * 0.035;
+              final nameWidth = rowWidth * 0.32;
+              final budgetWidth = rowWidth * 0.18;
+              final spentWidth = rowWidth * 0.18;
+              final remainingWidth = rowWidth * 0.17;
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: iconWidth,
+                    child: Center(
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: categoryColor,
+                        child: Icon(
+                          categoryIcon,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: gapSmall),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: nameWidth,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                category?.name ?? 'Category',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              if (remaining.accountId != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  account?.name ?? 'Account',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.65),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: budgetWidth,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Budget',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 11,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.6),
+                                ),
+                              ),
+                              Text(
+                                '$totalCurrencySymbol$budgetText',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: spentWidth,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Spent',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 11,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.6),
+                                ),
+                              ),
+                              Text(
+                                '$totalCurrencySymbol$spentText',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.secondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: remainingWidth,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Remaining',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 11,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.6),
+                                ),
+                              ),
+                              Text(
+                                '$totalCurrencySymbol$remainingText',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: isOverBudget
+                                      ? Theme.of(context).colorScheme.error
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.primary.withOpacity(0.85),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   String _currencySymbol(String? code) {
@@ -1145,8 +1938,13 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               rangeEnd = endOfDay(periodDate);
               break;
             case 'Week':
-              rangeStart = periodDate.subtract(
+              final weekStart = periodDate.subtract(
                 Duration(days: periodDate.weekday - 1),
+              );
+              rangeStart = DateTime(
+                weekStart.year,
+                weekStart.month,
+                weekStart.day,
               );
               rangeEnd = endOfDay(rangeStart.add(const Duration(days: 6)));
               break;
@@ -1164,10 +1962,28 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               return false;
           }
 
-          final overlaps =
-              !budget.startDate.isAfter(rangeEnd) &&
-              !budget.endDate.isBefore(rangeStart);
-          return overlaps;
+          // Normalize budget dates to start/end of day for comparison
+          final budgetStart = DateTime(
+            budget.startDate.year,
+            budget.startDate.month,
+            budget.startDate.day,
+          );
+          final budgetEnd = DateTime(
+            budget.endDate.year,
+            budget.endDate.month,
+            budget.endDate.day,
+            23,
+            59,
+            59,
+            999,
+          );
+
+          final budgetStartInRange =
+              !budgetStart.isBefore(rangeStart) &&
+              !budgetStart.isAfter(rangeEnd);
+          final budgetEndInRange =
+              !budgetEnd.isBefore(rangeStart) && !budgetEnd.isAfter(rangeEnd);
+          return budgetStartInRange && budgetEndInRange;
         })
         .toList();
   }
@@ -1312,36 +2128,50 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         break;
     }
   }
+}
 
-  Future<DateTime?> _pickSingleDate(
-    BuildContext context,
-    DateTime initialDate,
-  ) async {
-    return showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-  }
+class _ExpenseGroup {
+  _ExpenseGroup({
+    required this.categoryId,
+    required this.accountId,
+    required this.expenses,
+  });
 
-  Future<DateTimeRange?> _showDateRangePicker(
-    BuildContext context, {
-    DateTimeRange? initialRange,
-  }) async {
-    final now = DateTime.now();
-    return showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      initialDateRange:
-          initialRange ??
-          DateTimeRange(
-            start: DateTime(now.year, now.month, now.day),
-            end: DateTime(now.year, now.month, now.day + 6),
-          ),
-    );
-  }
+  final int? categoryId;
+  final int? accountId;
+  final List<Expense> expenses;
+
+  double get totalAmount => expenses.fold(0, (sum, e) => sum + e.amount);
+}
+
+class _BudgetGroup {
+  _BudgetGroup({
+    required this.categoryId,
+    required this.accountId,
+    required this.budgets,
+  });
+
+  final int? categoryId;
+  final int? accountId;
+  final List<Budget> budgets;
+
+  double get totalAmount => budgets.fold(0, (sum, b) => sum + b.amount);
+}
+
+class _RemainingGroup {
+  _RemainingGroup({
+    required this.categoryId,
+    required this.accountId,
+    required this.budgetAmount,
+    required this.spentAmount,
+  });
+
+  final int? categoryId;
+  final int? accountId;
+  final double budgetAmount;
+  final double spentAmount;
+
+  double get remaining => budgetAmount - spentAmount;
 }
 
 class _PieSliceData {
@@ -1356,11 +2186,13 @@ class _BudgetPieChart extends StatelessWidget {
     required this.total,
     required this.slices,
     required this.label,
+    this.labelColor,
   });
 
   final double total;
   final List<_PieSliceData> slices;
   final String label;
+  final Color? labelColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1389,7 +2221,7 @@ class _BudgetPieChart extends StatelessWidget {
             style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 20,
-              color: Theme.of(context).colorScheme.primary,
+              color: labelColor ?? Theme.of(context).colorScheme.primary,
             ),
           ),
         ],

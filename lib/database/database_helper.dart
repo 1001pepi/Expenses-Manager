@@ -34,7 +34,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -76,9 +76,14 @@ class DatabaseHelper {
         comment TEXT,
         createdAt $textType,
         FOREIGN KEY (accountId) REFERENCES accounts (id),
-        FOREIGN KEY (categoryId) REFERENCES categories (id)
+        FOREIGN KEY (categoryId) REFERENCES categories (id),
+        UNIQUE(accountId, categoryId, startDate, endDate)
       )
     ''');
+
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_unique ON budgets (accountId, categoryId, startDate, endDate)',
+    );
 
     await db.execute('''
       CREATE TABLE expenses (
@@ -135,6 +140,23 @@ class DatabaseHelper {
           FOREIGN KEY (categoryId) REFERENCES categories (id)
         )
       ''');
+    }
+
+    if (oldVersion < 5) {
+      await db.transaction((txn) async {
+        await txn.execute('''
+          DELETE FROM budgets
+          WHERE rowid NOT IN (
+            SELECT MIN(rowid)
+            FROM budgets
+            GROUP BY accountId, categoryId, startDate, endDate
+          )
+        ''');
+
+        await txn.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_unique ON budgets (accountId, categoryId, startDate, endDate)',
+        );
+      });
     }
 
     if (oldVersion < 4) {

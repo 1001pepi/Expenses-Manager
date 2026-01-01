@@ -42,7 +42,7 @@ class DateSelector extends StatelessWidget {
             if (picked != null) onDateSelected(picked);
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primary,
               borderRadius: BorderRadius.circular(8),
@@ -50,7 +50,7 @@ class DateSelector extends StatelessWidget {
             child: Text(
               _formatDate(selectedDate),
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 color: Theme.of(context).colorScheme.onPrimary,
                 fontWeight: FontWeight.w600,
               ),
