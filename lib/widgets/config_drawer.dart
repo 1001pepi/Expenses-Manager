@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../screens/accounts_screen.dart';
-import '../screens/category_screen.dart';
-import '../screens/settings_screen.dart';
+import '../screens/account/accounts_screen.dart';
+import '../screens/category/category_screen.dart';
+import '../screens/settings/settings_screen.dart';
 import '../theme/theme_provider.dart';
 
 class ConfigDrawer extends StatelessWidget {
@@ -79,7 +79,7 @@ class ConfigDrawer extends StatelessWidget {
                   final canNavigate = await onWillNavigate!();
                   if (!canNavigate) return;
                 }
-
+                Navigator.of(context).pop();
                 Navigator.push(
                   context,
                   PageRouteBuilder(

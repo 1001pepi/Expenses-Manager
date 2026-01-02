@@ -1,26 +1,23 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:world_countries/world_countries.dart';
 
-import '../models/account.dart';
-import '../models/category.dart' as app;
-import '../models/expense.dart';
-import '../theme/theme_provider.dart';
-import '../database/database_helper.dart';
-import 'edit_expense_screen.dart';
+import '../../models/account.dart';
+import '../../models/budget.dart';
+import '../../models/category.dart';
+import '../../theme/theme_provider.dart';
+import '../../database/database_helper.dart';
+import 'edit_budget_screen.dart';
 
-class ExpenseDetailsScreen extends StatelessWidget {
-  final Expense expense;
+class BudgetDetailsScreen extends StatelessWidget {
+  final Budget budget;
   final Account? account;
-  final app.Category? category;
+  final Category? category;
   final ThemeProvider themeProvider;
 
-  const ExpenseDetailsScreen({
+  const BudgetDetailsScreen({
     super.key,
-    required this.expense,
+    required this.budget,
     required this.account,
     required this.category,
     required this.themeProvider,
@@ -55,13 +52,13 @@ class ExpenseDetailsScreen extends StatelessWidget {
     final currencySymbol = _currencySymbol(account?.currency);
 
     Future<void> _confirmDelete() async {
-      if (expense.id == null) return;
+      if (budget.id == null) return;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Delete expense?', style: TextStyle(fontSize: 18)),
+          title: const Text('Delete budget?', style: TextStyle(fontSize: 18)),
           content: const Text(
-            'This action will permanently remove this expense.',
+            'This action will permanently remove this budget.',
           ),
           actions: [
             TextButton(
@@ -78,7 +75,7 @@ class ExpenseDetailsScreen extends StatelessWidget {
       );
 
       if (confirmed == true) {
-        await DatabaseHelper.instance.deleteExpense(expense.id!);
+        await DatabaseHelper.instance.deleteBudget(budget.id!);
         if (context.mounted) {
           Navigator.pop(context, true);
         }
@@ -87,33 +84,39 @@ class ExpenseDetailsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Expense Details'),
+        title: const Text('Budget Details'),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () async {
               final updated = await Navigator.push<bool>(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => EditExpenseScreen(
-                    expense: expense,
+                PageRouteBuilder(
+                  pageBuilder: (_, __, ___) => EditBudgetScreen(
+                    budget: budget,
                     themeProvider: themeProvider,
                   ),
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  transitionsBuilder: (_, __, ___, child) => child,
                 ),
               );
               if (updated == true && context.mounted) {
-                final allExpenses = await DatabaseHelper.instance
-                    .getAllExpenses();
-                final updatedExpense = allExpenses.firstWhere(
-                  (e) => e.id == expense.id,
-                  orElse: () => expense,
+                final allBudgets = await DatabaseHelper.instance
+                    .getAllBudgets();
+                final updatedBudgetMap = allBudgets.firstWhere(
+                  (b) => b['id'] == budget.id,
+                  orElse: () => budget.toMap(),
+                );
+                final updatedBudget = Budget.fromMap(
+                  updatedBudgetMap as Map<String, dynamic>,
                 );
                 if (context.mounted) {
                   Navigator.pushReplacement(
                     context,
                     PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => ExpenseDetailsScreen(
-                        expense: updatedExpense,
+                      pageBuilder: (_, __, ___) => BudgetDetailsScreen(
+                        budget: updatedBudget,
                         account: account,
                         category: category,
                         themeProvider: themeProvider,
@@ -147,21 +150,21 @@ class ExpenseDetailsScreen extends StatelessWidget {
                       child: _HeroHeader(
                         categoryColor: categoryColor,
                         categoryIcon: categoryIcon,
-                        categoryName: category?.name ?? 'Expense',
+                        categoryName: category?.name ?? 'Budget',
                         accountName: account?.name ?? 'Account',
                         amountText:
-                            '$currencySymbol${_formatAmount(expense.amount)}',
-                        date: _formatDate(expense.date),
-                        tags: expense.tags,
-                        comment: expense.comment ?? '',
-                        photos: [expense.photo1Path, expense.photo2Path],
+                            '$currencySymbol${_formatAmount(budget.amount)}',
+                        startDate: _formatDate(budget.startDate),
+                        endDate: _formatDate(budget.endDate),
+                        tags: budget.tags,
+                        comment: budget.comment ?? '',
                         onDelete: _confirmDelete,
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.only(top: 16, bottom: 20),
                       child: Text(
-                        'Created at ${_formatDate(expense.createdAt)}',
+                        'Created at ${_formatDate(budget.createdAt)}',
                         style: TextStyle(
                           fontSize: 13,
                           color: Theme.of(
@@ -188,10 +191,10 @@ class _HeroHeader extends StatelessWidget {
   final String categoryName;
   final String accountName;
   final String amountText;
-  final String date;
+  final String startDate;
+  final String endDate;
   final String tags;
   final String comment;
-  final List<String?> photos;
   final Future<void> Function() onDelete;
 
   const _HeroHeader({
@@ -200,44 +203,16 @@ class _HeroHeader extends StatelessWidget {
     required this.categoryName,
     required this.accountName,
     required this.amountText,
-    required this.date,
+    required this.startDate,
+    required this.endDate,
     required this.tags,
     required this.comment,
-    required this.photos,
     required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
-    void _openImage(String path) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-          pageBuilder: (_, __, ___) => Scaffold(
-            backgroundColor: Colors.black,
-            appBar: AppBar(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              iconTheme: const IconThemeData(color: Colors.white),
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            body: Center(
-              child: InteractiveViewer(
-                child: kIsWeb
-                    ? Image.network(path, fit: BoxFit.contain)
-                    : Image.file(File(path), fit: BoxFit.contain),
-              ),
-            ),
-          ),
-          transitionsBuilder: (_, __, ___, child) => child,
-        ),
-      );
-    }
-
+    final surface = Theme.of(context).colorScheme.surface;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -307,100 +282,54 @@ class _HeroHeader extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          Row(
-            children: [
-              Icon(Icons.calendar_today, size: 16, color: categoryColor),
-              const SizedBox(width: 8),
-              Text(
-                date,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
+          Container(
+            decoration: BoxDecoration(
+              color: surface.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: categoryColor.withOpacity(0.18)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _DateChip(
+                    label: 'Start',
+                    value: startDate,
+                    icon: Icons.calendar_month,
+                    color: categoryColor,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _DateChip(
+                    label: 'End',
+                    value: endDate,
+                    icon: Icons.calendar_month,
+                    color: categoryColor,
+                  ),
+                ),
+              ],
+            ),
           ),
           if (tags.isNotEmpty) ...[
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: tags.split(',').where((t) => t.trim().isNotEmpty).map((
-                t,
-              ) {
-                final tag = t.trim();
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: categoryColor.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: categoryColor.withOpacity(0.25),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    tag,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: categoryColor,
-                    ),
-                  ),
-                );
-              }).toList(),
+              children: tags
+                  .split(',')
+                  .map((tag) => tag.trim())
+                  .where((tag) => tag.isNotEmpty)
+                  .map((tag) {
+                    return _TagChip(label: tag, color: categoryColor);
+                  })
+                  .toList(),
             ),
           ],
           if (comment.isNotEmpty) ...[
             const SizedBox(height: 14),
             _CommentCard(text: comment, accent: categoryColor),
           ],
-          if (photos.any((p) => p != null)) ...[
-            const SizedBox(height: 14),
-            Text(
-              'Photos',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: photos.whereType<String>().map((path) {
-                final imageWidget = kIsWeb
-                    ? Image.network(
-                        path,
-                        width: 110,
-                        height: 110,
-                        fit: BoxFit.cover,
-                      )
-                    : Image.file(
-                        File(path),
-                        width: 110,
-                        height: 110,
-                        fit: BoxFit.cover,
-                      );
-                return GestureDetector(
-                  onTap: () => _openImage(path),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      color: Theme.of(context).colorScheme.surface,
-                      child: imageWidget,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-          const SizedBox(height: 18),
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Align(
@@ -441,6 +370,127 @@ class _CommentCard extends StatelessWidget {
           color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _TagChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
+      ),
+    );
+  }
+}
+
+class _DateChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _DateChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.65),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

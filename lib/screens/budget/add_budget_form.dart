@@ -1,12 +1,12 @@
-import '../theme/theme_provider.dart';
+import '../../theme/theme_provider.dart';
 import 'package:flutter/material.dart';
-import '../models/account.dart';
-import '../widgets/forms/amount_input_field.dart';
-import '../widgets/forms/account_selector.dart';
-import '../widgets/forms/category_grid_selector.dart';
-import '../widgets/forms/date_selector.dart';
-import '../widgets/forms/tags_section.dart';
-import '../widgets/forms/comment_field.dart';
+import '../../models/account.dart';
+import '../../widgets/forms/amount_input_field.dart';
+import '../../widgets/forms/account_selector.dart';
+import '../../widgets/forms/category_grid_selector.dart';
+import '../../widgets/forms/date_selector.dart';
+import '../../widgets/forms/tags_section.dart';
+import '../../widgets/forms/comment_field.dart';
 
 class AddBudgetForm extends StatefulWidget {
   final Account? selectedAccount;

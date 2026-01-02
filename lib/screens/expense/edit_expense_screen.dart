@@ -2,12 +2,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../database/database_helper.dart';
-import '../models/account.dart';
-import '../models/category.dart' as app;
-import '../models/expense.dart';
-import '../theme/theme_provider.dart';
-import '../widgets/config_drawer.dart';
+import '../../database/database_helper.dart';
+import '../../models/account.dart';
+import '../../models/category.dart' as app;
+import '../../models/expense.dart';
+import '../../theme/theme_provider.dart';
+import '../../widgets/config_drawer.dart';
 import 'add_expense_form.dart';
 
 class EditExpenseScreen extends StatefulWidget {

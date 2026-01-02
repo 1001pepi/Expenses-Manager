@@ -15,10 +15,10 @@ import '../models/expense.dart';
 import '../theme/theme_provider.dart';
 import '../utils/date_format_utils.dart';
 import '../widgets/config_drawer.dart';
-import 'budget_details_screen.dart';
-import 'add_financial_item_screen.dart';
-import 'expense_group_list_screen.dart';
-import 'budget_group_list_screen.dart';
+import 'budget/budget_details_screen.dart';
+import 'shared/add_financial_item_screen.dart';
+import 'expense/expense_group_list_screen.dart';
+import 'budget/budget_group_list_screen.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({

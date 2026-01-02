@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:world_countries/world_countries.dart';
-import '../theme/theme_provider.dart';
+import '../../theme/theme_provider.dart';
 import 'currency_selection_screen.dart';
-import '../widgets/config_drawer.dart';
+import '../../widgets/config_drawer.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ThemeProvider themeProvider;

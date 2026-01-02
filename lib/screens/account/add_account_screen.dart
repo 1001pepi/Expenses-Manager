@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:world_countries/world_countries.dart';
-import '../models/account.dart';
-import '../database/database_helper.dart';
-import '../theme/theme_provider.dart';
-import '../widgets/config_drawer.dart';
-import 'currency_selection_screen.dart';
-import '../utils/color_palette.dart';
+import '../../models/account.dart';
+import '../../database/database_helper.dart';
+import '../../theme/theme_provider.dart';
+import '../../widgets/config_drawer.dart';
+import '../settings/currency_selection_screen.dart';
+import '../../utils/color_palette.dart';
 
 class AddAccountScreen extends StatefulWidget {
   final Account? account; // Optional account for editing

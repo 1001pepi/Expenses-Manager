@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../database/database_helper.dart';
-import '../models/category.dart';
-import '../theme/theme_provider.dart';
+import '../../database/database_helper.dart';
+import '../../models/category.dart';
+import '../../theme/theme_provider.dart';
 import 'create_category_screen.dart';
-import '../widgets/config_drawer.dart';
+import '../../widgets/config_drawer.dart';
 
 class CategoryScreen extends StatefulWidget {
   final ThemeProvider? themeProvider;

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:world_countries/world_countries.dart';
-import '../theme/theme_provider.dart';
-import '../models/account.dart';
-import '../database/database_helper.dart';
-import '../widgets/config_drawer.dart';
+import '../../theme/theme_provider.dart';
+import '../../models/account.dart';
+import '../../database/database_helper.dart';
+import '../../widgets/config_drawer.dart';
 import 'add_account_screen.dart';
 
 class AccountsScreen extends StatefulWidget {

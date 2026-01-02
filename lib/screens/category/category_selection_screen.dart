@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../models/category.dart';
-import '../database/database_helper.dart';
-import '../widgets/config_drawer.dart';
-import '../theme/theme_provider.dart';
+import '../../models/category.dart';
+import '../../database/database_helper.dart';
+import '../../widgets/config_drawer.dart';
+import '../../theme/theme_provider.dart';
 import 'create_category_screen.dart';
 
 class CategorySelectionScreen extends StatefulWidget {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../screens/category_selection_screen.dart';
-import '../../screens/create_category_screen.dart';
+import '../../screens/category/category_selection_screen.dart';
+import '../../screens/category/create_category_screen.dart';
 import '../../theme/theme_provider.dart';
 
 class CategoryGridSelector extends StatelessWidget {

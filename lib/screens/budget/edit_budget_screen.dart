@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../database/database_helper.dart';
-import '../models/account.dart';
-import '../models/budget.dart';
-import '../models/category.dart';
-import '../theme/theme_provider.dart';
-import '../widgets/config_drawer.dart';
+import '../../database/database_helper.dart';
+import '../../models/account.dart';
+import '../../models/budget.dart';
+import '../../models/category.dart';
+import '../../theme/theme_provider.dart';
+import '../../widgets/config_drawer.dart';
 import 'add_budget_form.dart';
 
 class EditBudgetScreen extends StatefulWidget {

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import '../theme/theme_provider.dart';
-import '../models/account.dart';
-import '../models/budget.dart';
-import '../models/expense.dart';
-import '../database/database_helper.dart';
-import 'add_budget_form.dart';
-import 'add_expense_form.dart';
+import '../../theme/theme_provider.dart';
+import '../../models/account.dart';
+import '../../models/budget.dart';
+import '../../models/expense.dart';
+import '../../database/database_helper.dart';
+import '../budget/add_budget_form.dart';
+import '../expense/add_expense_form.dart';
 import 'package:image_picker/image_picker.dart';
-import '../widgets/config_drawer.dart';
+import '../../widgets/config_drawer.dart';
 import 'package:sqflite/sqflite.dart';
 
 class AddFinancialItemScreen extends StatefulWidget {
@@ -287,6 +287,91 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
         context,
       ).showSnackBar(const SnackBar(content: Text('Please enter an amount')));
       return;
+    }
+
+    // Check if a budget exists for this category and account covering the expense date
+    final budgets = await DatabaseHelper.instance.getAllBudgets();
+    final expenseDate = _selectedExpenseDate;
+    final accountId = _selectedAccount!.id!;
+    final categoryId = _selectedExpenseCategory.id;
+
+    final hasBudget = budgets.any((budgetMap) {
+      final budget = Budget.fromMap(budgetMap as Map<String, dynamic>);
+      return budget.accountId == accountId &&
+          budget.categoryId == categoryId &&
+          !expenseDate.isBefore(budget.startDate) &&
+          !expenseDate.isAfter(budget.endDate);
+    });
+
+    // If no budget exists, ask for confirmation
+    if (!hasBudget) {
+      final shouldContinue = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('No Budget Found', style: TextStyle(fontSize: 18)),
+          content: Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'No budget has been created for '),
+                TextSpan(
+                  text: _selectedExpenseCategory.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const TextSpan(text: ' in '),
+                TextSpan(
+                  text: _selectedAccount!.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const TextSpan(text: ' covering '),
+                TextSpan(
+                  text:
+                      '${expenseDate.day}/${expenseDate.month}/${expenseDate.year}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const TextSpan(
+                  text:
+                      '.\n\nAn empty budget will be automatically created for this date.\n\nDo you want to continue?',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldContinue != true) {
+        return; // User cancelled
+      }
+
+      // Create a zero-amount budget for this expense
+      try {
+        final zeroBudget = Budget(
+          accountId: accountId,
+          categoryId: categoryId,
+          amount: 0.0,
+          startDate: expenseDate,
+          endDate: expenseDate,
+          tags: '',
+          createdAt: DateTime.now(),
+        );
+        await DatabaseHelper.instance.createBudget(zeroBudget);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Warning: Could not create budget: $e')),
+          );
+        }
+        // Continue with expense creation even if budget creation fails
+      }
     }
 
     final expense = Expense(
