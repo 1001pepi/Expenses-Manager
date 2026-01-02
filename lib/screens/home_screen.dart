@@ -43,6 +43,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   List<dynamic>? _cachedExpenseData;
   bool _mergeByCategory = false;
   bool _showRemaining = false;
+  int _refreshCounter = 0;
 
   // Groups expenses by category and account for aggregated list view.
   List<_ExpenseGroup> _groupExpenses(List<Expense> expenses) {
@@ -339,12 +340,14 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                     selectedTab,
                     periodDate,
                     periodRange,
+                    forceRefresh: _refreshCounter,
                   )
                 : _buildExpensesContent(
                     context,
                     selectedTab,
                     periodDate,
                     periodRange,
+                    forceRefresh: _refreshCounter,
                   ),
           ),
         ],
@@ -516,13 +519,17 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     BuildContext context,
     String tabName,
     DateTime periodDate,
-    DateTimeRange? periodRange,
-  ) {
+    DateTimeRange? periodRange, {
+    required int forceRefresh,
+  }) {
     return FutureBuilder<List<dynamic>>(
+      key: ValueKey(forceRefresh),
       future: Future.wait([
         DatabaseHelper.instance.getAllBudgets(),
-        DatabaseHelper.instance.getAllCategories(),
-        DatabaseHelper.instance.getAllAccounts(),
+        DatabaseHelper.instance.getAllCategories(
+          forceRefresh: forceRefresh > 0,
+        ),
+        DatabaseHelper.instance.getAllAccounts(forceRefresh: forceRefresh > 0),
       ]),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -825,6 +832,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                         );
 
                         if (updated == true && mounted) {
+                          // Clear cache and increment refresh counter to force rebuild
+                          _cachedBudgetData = null;
+                          _cachedExpenseData = null;
+                          _refreshCounter++;
                           setState(() {});
                         }
                         return;
@@ -843,6 +854,9 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                         ),
                       );
                       if (updated == true && mounted) {
+                        // Clear cache to force refresh of data
+                        _cachedBudgetData = null;
+                        _cachedExpenseData = null;
                         setState(() {});
                       }
                     },
@@ -998,21 +1012,31 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     BuildContext context,
     String selectedTab,
     DateTime periodDate,
-    DateTimeRange? periodRange,
-  ) {
+    DateTimeRange? periodRange, {
+    required int forceRefresh,
+  }) {
     final theme = Theme.of(context);
     return FutureBuilder(
+      key: ValueKey(forceRefresh),
       future: _showRemaining
           ? Future.wait([
               DatabaseHelper.instance.getAllExpenses(),
-              DatabaseHelper.instance.getAllCategories(),
-              DatabaseHelper.instance.getAllAccounts(),
+              DatabaseHelper.instance.getAllCategories(
+                forceRefresh: forceRefresh > 0,
+              ),
+              DatabaseHelper.instance.getAllAccounts(
+                forceRefresh: forceRefresh > 0,
+              ),
               DatabaseHelper.instance.getAllBudgets(),
             ])
           : Future.wait([
               DatabaseHelper.instance.getAllExpenses(),
-              DatabaseHelper.instance.getAllCategories(),
-              DatabaseHelper.instance.getAllAccounts(),
+              DatabaseHelper.instance.getAllCategories(
+                forceRefresh: forceRefresh > 0,
+              ),
+              DatabaseHelper.instance.getAllAccounts(
+                forceRefresh: forceRefresh > 0,
+              ),
             ]),
       builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
         if (snapshot.hasError) {
@@ -1455,7 +1479,13 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                 ),
                               ),
                             );
-                            if (updated == true && mounted) setState(() {});
+                            if (updated == true && mounted) {
+                              // Clear cache and increment refresh counter to force rebuild
+                              _cachedBudgetData = null;
+                              _cachedExpenseData = null;
+                              _refreshCounter++;
+                              setState(() {});
+                            }
                           },
                           child: Container(
                             padding: const EdgeInsets.all(12),

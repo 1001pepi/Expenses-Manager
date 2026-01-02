@@ -216,7 +216,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen>
       return;
     }
 
-    final amount = double.tryParse(amountStr);
+    final amount = double.tryParse(amountStr.replaceAll(',', '.'));
     if (amount == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid amount')),

@@ -9,7 +9,7 @@ import '../../theme/theme_provider.dart';
 import '../../database/database_helper.dart';
 import 'edit_budget_screen.dart';
 
-class BudgetDetailsScreen extends StatelessWidget {
+class BudgetDetailsScreen extends StatefulWidget {
   final Budget budget;
   final Account? account;
   final Category? category;
@@ -22,6 +22,24 @@ class BudgetDetailsScreen extends StatelessWidget {
     required this.category,
     required this.themeProvider,
   });
+
+  @override
+  State<BudgetDetailsScreen> createState() => _BudgetDetailsScreenState();
+}
+
+class _BudgetDetailsScreenState extends State<BudgetDetailsScreen> {
+  late Budget _budget;
+  late Account? _account;
+  late Category? _category;
+  bool _hasChanges = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _budget = widget.budget;
+    _account = widget.account;
+    _category = widget.category;
+  }
 
   String _currencySymbol(String? code) {
     if (code == null || code.isEmpty) return '';
@@ -43,16 +61,16 @@ class BudgetDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final categoryColor = category != null
-        ? Color(category!.color)
+    final categoryColor = _category != null
+        ? Color(_category!.color)
         : Theme.of(context).colorScheme.primary;
-    final categoryIcon = category != null
-        ? IconData(category!.iconCode, fontFamily: 'MaterialIcons')
+    final categoryIcon = _category != null
+        ? IconData(_category!.iconCode, fontFamily: 'MaterialIcons')
         : Icons.category;
-    final currencySymbol = _currencySymbol(account?.currency);
+    final currencySymbol = _currencySymbol(_account?.currency);
 
     Future<void> _confirmDelete() async {
-      if (budget.id == null) return;
+      if (_budget.id == null) return;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -75,7 +93,7 @@ class BudgetDetailsScreen extends StatelessWidget {
       );
 
       if (confirmed == true) {
-        await DatabaseHelper.instance.deleteBudget(budget.id!);
+        await DatabaseHelper.instance.deleteBudget(_budget.id!);
         if (context.mounted) {
           Navigator.pop(context, true);
         }
@@ -93,8 +111,8 @@ class BudgetDetailsScreen extends StatelessWidget {
                 context,
                 PageRouteBuilder(
                   pageBuilder: (_, __, ___) => EditBudgetScreen(
-                    budget: budget,
-                    themeProvider: themeProvider,
+                    budget: _budget,
+                    themeProvider: widget.themeProvider,
                   ),
                   transitionDuration: Duration.zero,
                   reverseTransitionDuration: Duration.zero,
@@ -102,84 +120,87 @@ class BudgetDetailsScreen extends StatelessWidget {
                 ),
               );
               if (updated == true && context.mounted) {
+                // Fetch the updated budget, account, and category
                 final allBudgets = await DatabaseHelper.instance
                     .getAllBudgets();
                 final updatedBudgetMap = allBudgets.firstWhere(
-                  (b) => b['id'] == budget.id,
-                  orElse: () => budget.toMap(),
+                  (b) => b['id'] == _budget.id,
+                  orElse: () => _budget.toMap(),
                 );
                 final updatedBudget = Budget.fromMap(
                   updatedBudgetMap as Map<String, dynamic>,
                 );
-                if (context.mounted) {
-                  Navigator.pushReplacement(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => BudgetDetailsScreen(
-                        budget: updatedBudget,
-                        account: account,
-                        category: category,
-                        themeProvider: themeProvider,
-                      ),
-                      transitionDuration: Duration.zero,
-                      reverseTransitionDuration: Duration.zero,
-                      transitionsBuilder: (_, __, ___, child) => child,
-                    ),
-                  );
-                }
+                final updatedAccount = await DatabaseHelper.instance.getAccount(
+                  updatedBudget.accountId,
+                );
+                final updatedCategory = await DatabaseHelper.instance
+                    .getCategory(updatedBudget.categoryId);
+
+                setState(() {
+                  _budget = updatedBudget;
+                  _account = updatedAccount;
+                  _category = updatedCategory;
+                  _hasChanges = true;
+                });
               }
             },
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 32,
-              ),
-              child: SizedBox(
-                height: constraints.maxHeight - 32,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: _HeroHeader(
-                        categoryColor: categoryColor,
-                        categoryIcon: categoryIcon,
-                        categoryName: category?.name ?? 'Budget',
-                        accountName: account?.name ?? 'Account',
-                        amountText:
-                            '$currencySymbol${_formatAmount(budget.amount)}',
-                        startDate: _formatDate(budget.startDate),
-                        endDate: _formatDate(budget.endDate),
-                        tags: budget.tags,
-                        comment: budget.comment ?? '',
-                        onDelete: _confirmDelete,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 20),
-                      child: Text(
-                        'Created at ${_formatDate(budget.createdAt)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withOpacity(0.65),
-                          fontWeight: FontWeight.w600,
+      body: WillPopScope(
+        onWillPop: () async {
+          Navigator.of(context).pop(_hasChanges);
+          return false;
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 32,
+                ),
+                child: SizedBox(
+                  height: constraints.maxHeight - 32,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: _HeroHeader(
+                          categoryColor: categoryColor,
+                          categoryIcon: categoryIcon,
+                          categoryName: _category?.name ?? 'Budget',
+                          accountName: _account?.name ?? 'Account',
+                          amountText:
+                              '$currencySymbol${_formatAmount(_budget.amount)}',
+                          startDate: _formatDate(_budget.startDate),
+                          endDate: _formatDate(_budget.endDate),
+                          tags: _budget.tags,
+                          comment: _budget.comment ?? '',
+                          onDelete: _confirmDelete,
                         ),
                       ),
-                    ),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16, bottom: 20),
+                        child: Text(
+                          'Created at ${_formatDate(_budget.createdAt)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.65),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -454,43 +475,6 @@ class _DateChip extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _DetailRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

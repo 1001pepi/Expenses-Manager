@@ -8,8 +8,7 @@ class ConfigDrawer extends StatelessWidget {
   final ThemeProvider? themeProvider;
   final Future<bool> Function()? onWillNavigate;
 
-  const ConfigDrawer({Key? key, this.themeProvider, this.onWillNavigate})
-    : super(key: key);
+  const ConfigDrawer({super.key, this.themeProvider, this.onWillNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -28,21 +27,24 @@ class ConfigDrawer extends StatelessWidget {
               leading: const Icon(Icons.home_outlined),
               title: const Text('Home'),
               onTap: () async {
+                // Pop the drawer first
+                Navigator.of(context).pop();
+
                 // Check if navigation is allowed
                 if (onWillNavigate != null) {
                   final canNavigate = await onWillNavigate!();
                   if (!canNavigate) return;
                 }
 
+                if (!context.mounted) return;
+
+                // Wait for drawer close animation
+                await Future.delayed(const Duration(milliseconds: 50));
+
+                if (!context.mounted) return;
+
                 // Get the root navigator for navigation
-                final rootNavigator = Navigator.of(
-                  context,
-                  rootNavigator: true,
-                );
-                // Pop the drawer
-                Navigator.of(context).pop();
-                // Use root navigator to go back to home after drawer closes
-                rootNavigator.popUntil((route) {
+                Navigator.of(context, rootNavigator: true).popUntil((route) {
                   return route.isFirst;
                 });
               },
@@ -52,13 +54,22 @@ class ConfigDrawer extends StatelessWidget {
                 leading: const Icon(Icons.account_balance_wallet_outlined),
                 title: const Text('Accounts'),
                 onTap: () async {
+                  // Pop the drawer first
+                  Navigator.of(context).pop();
+
                   // Check if navigation is allowed
                   if (onWillNavigate != null) {
                     final canNavigate = await onWillNavigate!();
                     if (!canNavigate) return;
                   }
 
-                  Navigator.of(context).pop();
+                  if (!context.mounted) return;
+
+                  // Wait for drawer close animation
+                  await Future.delayed(const Duration(milliseconds: 250));
+
+                  if (!context.mounted) return;
+
                   Navigator.push(
                     context,
                     PageRouteBuilder(
@@ -74,12 +85,22 @@ class ConfigDrawer extends StatelessWidget {
               leading: const Icon(Icons.category_outlined),
               title: const Text('Categories'),
               onTap: () async {
+                // Pop the drawer first
+                Navigator.of(context).pop();
+
                 // Check if navigation is allowed
                 if (onWillNavigate != null) {
                   final canNavigate = await onWillNavigate!();
                   if (!canNavigate) return;
                 }
-                Navigator.of(context).pop();
+
+                if (!context.mounted) return;
+
+                // Wait for drawer close animation
+                await Future.delayed(const Duration(milliseconds: 250));
+
+                if (!context.mounted) return;
+
                 Navigator.push(
                   context,
                   PageRouteBuilder(
@@ -96,12 +117,21 @@ class ConfigDrawer extends StatelessWidget {
                 leading: const Icon(Icons.settings_outlined),
                 title: const Text('Settings'),
                 onTap: () async {
+                  // Pop the drawer first
+                  Navigator.of(context).pop();
+
                   // Check if navigation is allowed
                   if (onWillNavigate != null) {
                     final canNavigate = await onWillNavigate!();
                     if (!canNavigate) return;
                   }
-                  Navigator.of(context).pop();
+
+                  if (!context.mounted) return;
+
+                  // Wait for drawer close animation
+                  await Future.delayed(const Duration(milliseconds: 250));
+
+                  if (!context.mounted) return;
 
                   Navigator.push(
                     context,

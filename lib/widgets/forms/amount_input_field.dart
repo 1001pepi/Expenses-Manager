@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:world_countries/world_countries.dart';
+import '../../screens/shared/calculator_screen.dart';
 
 class AmountInputField extends StatelessWidget {
   final String currencyCode;
@@ -65,8 +66,16 @@ class AmountInputField extends StatelessWidget {
                 size: 32,
                 color: Theme.of(context).colorScheme.primary,
               ),
-              onPressed: () {
-                // TODO: Open calculator
+              onPressed: () async {
+                final result = await Navigator.push<String>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CalculatorScreen(),
+                  ),
+                );
+                if (result != null && controller != null) {
+                  controller!.text = result;
+                }
               },
             ),
           ],

@@ -155,7 +155,7 @@ class _EditBudgetScreenState extends State<EditBudgetScreen>
       return;
     }
 
-    final amount = double.tryParse(amountStr);
+    final amount = double.tryParse(amountStr.replaceAll(',', '.'));
     if (amount == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid amount')),
@@ -238,7 +238,7 @@ class _EditBudgetScreenState extends State<EditBudgetScreen>
         drawer: ConfigDrawer(themeProvider: widget.themeProvider),
         appBar: AppBar(
           title: const Text('Edit Budget'),
-          centerTitle: true,
+          centerTitle: false,
           actions: [TextButton(onPressed: _save, child: const Text('Save'))],
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),

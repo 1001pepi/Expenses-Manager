@@ -176,7 +176,16 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     final accounts = await DatabaseHelper.instance.getAllAccounts();
     if (accounts.isNotEmpty) {
       setState(() {
-        _selectedAccount = accounts.first; // Load first account as default
+        // Check if a default account is set in ThemeProvider
+        if (widget.themeProvider?.defaultAccountId != null) {
+          final defaultAccount = accounts.firstWhere(
+            (acc) => acc.id == widget.themeProvider!.defaultAccountId,
+            orElse: () => accounts.first,
+          );
+          _selectedAccount = defaultAccount;
+        } else {
+          _selectedAccount = accounts.first;
+        }
       });
     }
     _loadCategories();
@@ -245,7 +254,7 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     final budget = Budget(
       accountId: _selectedAccount!.id!,
       categoryId: _selectedBudgetCategory.id,
-      amount: double.parse(_budgetAmountController.text),
+      amount: double.parse(_budgetAmountController.text.replaceAll(',', '.')),
       startDate: _budgetStartDate!,
       endDate: _budgetEndDate!,
       tags: _budgetSelectedTags.join(','),
@@ -377,7 +386,7 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     final expense = Expense(
       accountId: _selectedAccount!.id!,
       categoryId: _selectedExpenseCategory.id,
-      amount: double.parse(_expenseAmountController.text),
+      amount: double.parse(_expenseAmountController.text.replaceAll(',', '.')),
       date: _selectedExpenseDate,
       tags: _expenseSelectedTags.join(','),
       comment: _expenseCommentController.text.isNotEmpty

@@ -12,7 +12,7 @@ import '../../theme/theme_provider.dart';
 import '../../database/database_helper.dart';
 import 'edit_expense_screen.dart';
 
-class ExpenseDetailsScreen extends StatelessWidget {
+class ExpenseDetailsScreen extends StatefulWidget {
   final Expense expense;
   final Account? account;
   final app.Category? category;
@@ -25,6 +25,24 @@ class ExpenseDetailsScreen extends StatelessWidget {
     required this.category,
     required this.themeProvider,
   });
+
+  @override
+  State<ExpenseDetailsScreen> createState() => _ExpenseDetailsScreenState();
+}
+
+class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
+  late Expense _expense;
+  late Account? _account;
+  late app.Category? _category;
+  bool _hasChanges = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _expense = widget.expense;
+    _account = widget.account;
+    _category = widget.category;
+  }
 
   String _currencySymbol(String? code) {
     if (code == null || code.isEmpty) return '';
@@ -46,16 +64,16 @@ class ExpenseDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final categoryColor = category != null
-        ? Color(category!.color)
+    final categoryColor = _category != null
+        ? Color(_category!.color)
         : Theme.of(context).colorScheme.primary;
-    final categoryIcon = category != null
-        ? IconData(category!.iconCode, fontFamily: 'MaterialIcons')
+    final categoryIcon = _category != null
+        ? IconData(_category!.iconCode, fontFamily: 'MaterialIcons')
         : Icons.category;
-    final currencySymbol = _currencySymbol(account?.currency);
+    final currencySymbol = _currencySymbol(_account?.currency);
 
     Future<void> _confirmDelete() async {
-      if (expense.id == null) return;
+      if (_expense.id == null) return;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -78,7 +96,7 @@ class ExpenseDetailsScreen extends StatelessWidget {
       );
 
       if (confirmed == true) {
-        await DatabaseHelper.instance.deleteExpense(expense.id!);
+        await DatabaseHelper.instance.deleteExpense(_expense.id!);
         if (context.mounted) {
           Navigator.pop(context, true);
         }
@@ -96,87 +114,90 @@ class ExpenseDetailsScreen extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (_) => EditExpenseScreen(
-                    expense: expense,
-                    themeProvider: themeProvider,
+                    expense: _expense,
+                    themeProvider: widget.themeProvider,
                   ),
                 ),
               );
               if (updated == true && context.mounted) {
+                // Fetch the updated expense, account, and category
                 final allExpenses = await DatabaseHelper.instance
                     .getAllExpenses();
                 final updatedExpense = allExpenses.firstWhere(
-                  (e) => e.id == expense.id,
-                  orElse: () => expense,
+                  (e) => e.id == _expense.id,
+                  orElse: () => _expense,
                 );
-                if (context.mounted) {
-                  Navigator.pushReplacement(
-                    context,
-                    PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => ExpenseDetailsScreen(
-                        expense: updatedExpense,
-                        account: account,
-                        category: category,
-                        themeProvider: themeProvider,
-                      ),
-                      transitionDuration: Duration.zero,
-                      reverseTransitionDuration: Duration.zero,
-                      transitionsBuilder: (_, __, ___, child) => child,
-                    ),
-                  );
-                }
+                final updatedAccount = await DatabaseHelper.instance.getAccount(
+                  updatedExpense.accountId,
+                );
+                final updatedCategory = await DatabaseHelper.instance
+                    .getCategory(updatedExpense.categoryId);
+
+                setState(() {
+                  _expense = updatedExpense;
+                  _account = updatedAccount;
+                  _category = updatedCategory;
+                  _hasChanges = true;
+                });
               }
             },
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 32,
-              ),
-              child: SizedBox(
-                height: constraints.maxHeight - 32,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: _HeroHeader(
-                        categoryColor: categoryColor,
-                        categoryIcon: categoryIcon,
-                        categoryName: category?.name ?? 'Expense',
-                        accountName: account?.name ?? 'Account',
-                        amountText:
-                            '$currencySymbol${_formatAmount(expense.amount)}',
-                        date: _formatDate(expense.date),
-                        tags: expense.tags,
-                        comment: expense.comment ?? '',
-                        photos: [expense.photo1Path, expense.photo2Path],
-                        onDelete: _confirmDelete,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 20),
-                      child: Text(
-                        'Created at ${_formatDate(expense.createdAt)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withOpacity(0.65),
-                          fontWeight: FontWeight.w600,
+      body: WillPopScope(
+        onWillPop: () async {
+          Navigator.of(context).pop(_hasChanges);
+          return false;
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 32,
+                ),
+                child: SizedBox(
+                  height: constraints.maxHeight - 32,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: _HeroHeader(
+                          categoryColor: categoryColor,
+                          categoryIcon: categoryIcon,
+                          categoryName: _category?.name ?? 'Expense',
+                          accountName: _account?.name ?? 'Account',
+                          amountText:
+                              '$currencySymbol${_formatAmount(_expense.amount)}',
+                          date: _formatDate(_expense.date),
+                          tags: _expense.tags,
+                          comment: _expense.comment ?? '',
+                          photos: [_expense.photo1Path, _expense.photo2Path],
+                          onDelete: _confirmDelete,
                         ),
                       ),
-                    ),
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16, bottom: 20),
+                        child: Text(
+                          'Created at ${_formatDate(_expense.createdAt)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.65),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

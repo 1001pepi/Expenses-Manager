@@ -278,6 +278,17 @@ class DatabaseHelper {
     return _cachedCategories!;
   }
 
+  // Get a single category by id
+  Future<Category?> getCategory(int id) async {
+    final db = await database;
+    final maps = await db.query('categories', where: 'id = ?', whereArgs: [id]);
+
+    if (maps.isNotEmpty) {
+      return Category.fromMap(maps.first);
+    }
+    return null;
+  }
+
   // Update a category
   Future<int> updateCategory(Category category) async {
     final db = await database;
