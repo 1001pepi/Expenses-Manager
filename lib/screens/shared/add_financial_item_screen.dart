@@ -4,6 +4,7 @@ import '../../theme/theme_provider.dart';
 import '../../models/account.dart';
 import '../../models/budget.dart';
 import '../../models/expense.dart';
+import '../../models/category.dart' as app;
 import '../../database/database_helper.dart';
 import '../budget/add_budget_form.dart';
 import '../expense/add_expense_form.dart';
@@ -17,6 +18,8 @@ class AddFinancialItemScreen extends StatefulWidget {
   final String? selectedTab;
   final DateTime? periodDate;
   final DateTimeRange? customPeriodRange;
+  final app.Category? defaultExpenseCategory;
+  final DateTime? defaultExpenseDate;
 
   AddFinancialItemScreen({
     Key? key,
@@ -25,6 +28,8 @@ class AddFinancialItemScreen extends StatefulWidget {
     this.selectedTab,
     this.periodDate,
     this.customPeriodRange,
+    this.defaultExpenseCategory,
+    this.defaultExpenseDate,
   }) : super(key: key);
 
   @override
@@ -204,7 +209,18 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
     if (mounted) {
       setState(() {
         _categories = categories;
-        // Don't set default categories - let user select them
+        // Set default expense category if provided
+        if (widget.defaultExpenseCategory != null && categories.isNotEmpty) {
+          final matchingCategory = categories.firstWhere(
+            (cat) => cat.id == widget.defaultExpenseCategory!.id,
+            orElse: () => categories.first,
+          );
+          _selectedExpenseCategory = matchingCategory;
+        }
+        // Set default expense date if provided
+        if (widget.defaultExpenseDate != null) {
+          _selectedExpenseDate = widget.defaultExpenseDate!;
+        }
       });
     }
   }

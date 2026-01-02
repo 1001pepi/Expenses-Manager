@@ -98,7 +98,8 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
       if (confirmed == true) {
         await DatabaseHelper.instance.deleteExpense(_expense.id!);
         if (context.mounted) {
-          Navigator.pop(context, true);
+          // Return 'deleted' to signal that the expense was deleted
+          Navigator.pop(context, 'deleted');
         }
       }
     }

@@ -636,37 +636,50 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         final totalCurrencySymbol = _currencySymbol(primaryAccount?.currency);
 
         if (filteredBudgets.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(32.0, 80.0, 32.0, 32.0),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.account_balance_wallet_outlined,
-                  size: 80,
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'No Budgets',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'You haven\'t set any budget for this period.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 15,
+          return GestureDetector(
+            onHorizontalDragEnd: (details) {
+              if (details.primaryVelocity! > 0) {
+                // Swipe right - go to previous period
+                _updatePeriod(tabName, -1);
+              } else if (details.primaryVelocity! < 0) {
+                // Swipe left - go to next period
+                _updatePeriod(tabName, 1);
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(32.0, 80.0, 32.0, 32.0),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.account_balance_wallet_outlined,
+                    size: 80,
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
-                    height: 1.5,
+                    ).colorScheme.primary.withOpacity(0.3),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  Text(
+                    'No Budgets',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'You haven\'t set any budget for this period.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withOpacity(0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -675,20 +688,31 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 0.0, bottom: 8.0),
-              child: _BudgetPieChart(
-                total: totalBudgetAmount,
-                slices: [
-                  for (final g in categorySlices)
-                    _PieSliceData(
-                      value: g.totalAmount,
-                      color: Color(
-                        categoryMap[g.categoryId]?.color ??
-                            Theme.of(context).colorScheme.primary.value,
+              child: GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  if (details.primaryVelocity! > 0) {
+                    // Swipe right - go to previous period
+                    _updatePeriod(tabName, -1);
+                  } else if (details.primaryVelocity! < 0) {
+                    // Swipe left - go to next period
+                    _updatePeriod(tabName, 1);
+                  }
+                },
+                child: _BudgetPieChart(
+                  total: totalBudgetAmount,
+                  slices: [
+                    for (final g in categorySlices)
+                      _PieSliceData(
+                        value: g.totalAmount,
+                        color: Color(
+                          categoryMap[g.categoryId]?.color ??
+                              Theme.of(context).colorScheme.primary.value,
+                        ),
                       ),
-                    ),
-                ],
-                label:
-                    '$totalCurrencySymbol${_formatAmount(totalBudgetAmount)}',
+                  ],
+                  label:
+                      '$totalCurrencySymbol${_formatAmount(totalBudgetAmount)}',
+                ),
               ),
             ),
             Padding(
@@ -1169,37 +1193,50 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
             : 0.0;
 
         if (filteredExpenses.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(32.0, 80.0, 32.0, 32.0),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.receipt_long_outlined,
-                  size: 80,
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'No Expenses',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'You haven\'t recorded any expenses for this period.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 15,
+          return GestureDetector(
+            onHorizontalDragEnd: (details) {
+              if (details.primaryVelocity! > 0) {
+                // Swipe right - go to previous period
+                _updatePeriod(selectedTab, -1);
+              } else if (details.primaryVelocity! < 0) {
+                // Swipe left - go to next period
+                _updatePeriod(selectedTab, 1);
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(32.0, 80.0, 32.0, 32.0),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.receipt_long_outlined,
+                    size: 80,
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
-                    height: 1.5,
+                    ).colorScheme.primary.withOpacity(0.3),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  Text(
+                    'No Expenses',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'You haven\'t recorded any expenses for this period.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withOpacity(0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -1208,36 +1245,49 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 0.0, bottom: 6.0),
-              child: _BudgetPieChart(
-                total: _showRemaining ? totalRemaining : totalExpenseAmount,
-                slices: _showRemaining
-                    ? [
-                        for (final g in remainingGroups)
-                          if (g.remaining > 0)
+              child: GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  if (details.primaryVelocity! > 0) {
+                    // Swipe right - go to previous period
+                    _updatePeriod(selectedTab, -1);
+                  } else if (details.primaryVelocity! < 0) {
+                    // Swipe left - go to next period
+                    _updatePeriod(selectedTab, 1);
+                  }
+                },
+                child: _BudgetPieChart(
+                  total: _showRemaining ? totalRemaining : totalExpenseAmount,
+                  slices: _showRemaining
+                      ? [
+                          for (final g in remainingGroups)
+                            if (g.remaining > 0)
+                              _PieSliceData(
+                                value: g.remaining,
+                                color: Color(
+                                  categoryMap[g.categoryId]?.color ??
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.primary.value,
+                                ),
+                              ),
+                        ]
+                      : [
+                          for (final g in categorySlices)
                             _PieSliceData(
-                              value: g.remaining,
+                              value: g.totalAmount,
                               color: Color(
                                 categoryMap[g.categoryId]?.color ??
                                     Theme.of(context).colorScheme.primary.value,
                               ),
                             ),
-                      ]
-                    : [
-                        for (final g in categorySlices)
-                          _PieSliceData(
-                            value: g.totalAmount,
-                            color: Color(
-                              categoryMap[g.categoryId]?.color ??
-                                  Theme.of(context).colorScheme.primary.value,
-                            ),
-                          ),
-                      ],
-                label: _showRemaining
-                    ? '$totalCurrencySymbol${_formatAmount(totalRemaining)}'
-                    : '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
-                labelColor: _showRemaining && totalRemaining < 0
-                    ? Theme.of(context).colorScheme.error
-                    : null,
+                        ],
+                  label: _showRemaining
+                      ? '$totalCurrencySymbol${_formatAmount(totalRemaining)}'
+                      : '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
+                  labelColor: _showRemaining && totalRemaining < 0
+                      ? Theme.of(context).colorScheme.error
+                      : null,
+                ),
               ),
             ),
             Padding(
