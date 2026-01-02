@@ -472,7 +472,7 @@ class _AddFinancialItemScreenState extends State<AddFinancialItemScreen>
             ),
           ],
           title: const Text('Add Financial Item'),
-          centerTitle: true,
+          centerTitle: false,
         ),
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,

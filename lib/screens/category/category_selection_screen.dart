@@ -45,17 +45,14 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
       drawerEnableOpenDragGesture: false,
       drawer: ConfigDrawer(themeProvider: widget.themeProvider),
       appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () {
-              FocusScope.of(context).unfocus();
-              Scaffold.of(context).openDrawer();
-            },
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context);
+          },
         ),
         title: const Text('Select Category'),
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: Column(
         children: [
@@ -77,9 +74,9 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 4,
-                    crossAxisSpacing: 22,
-                    mainAxisSpacing: 22,
-                    childAspectRatio: 1.0,
+                    crossAxisSpacing: 20,
+                    mainAxisSpacing: 20,
+                    childAspectRatio: 0.8,
                   ),
                   itemCount: categories.length + 1,
                   itemBuilder: (context, index) {
@@ -100,24 +97,22 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                           }
                         },
                         borderRadius: BorderRadius.circular(50),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer,
-                            border: Border.all(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.add,
-                              size: 38,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onPrimaryContainer,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        child: Center(
+                          child: SizedBox(
+                            width: 50,
+                            height: 50,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              child: Icon(
+                                Icons.add,
+                                size: 30,
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              ),
                             ),
                           ),
                         ),
@@ -137,32 +132,65 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                         setState(() => _selectedCategory = category);
                       },
                       borderRadius: BorderRadius.circular(50),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: categoryColor.withOpacity(0.15),
-                          border: Border.all(
-                            color: categoryColor,
-                            width: isSelected ? 2.5 : 0.5,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(iconData, size: 32, color: categoryColor),
-                            const SizedBox(height: 4),
-                            Text(
-                              category.name,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.75),
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isSelected
+                                  ? categoryColor.withOpacity(0.25)
+                                  : categoryColor.withOpacity(0.15),
+                              border: Border.all(
+                                color: categoryColor,
+                                width: isSelected ? 3.0 : 0.5,
                               ),
                             ),
-                          ],
-                        ),
+                            padding: EdgeInsets.all(isSelected ? 14 : 12),
+                            child: Icon(
+                              iconData,
+                              size: 38,
+                              color: categoryColor,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 2.0,
+                            ),
+                            child: ShaderMask(
+                              shaderCallback: (Rect bounds) {
+                                return LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Colors.white,
+                                    Colors.white,
+                                    Colors.white.withOpacity(0),
+                                  ],
+                                  stops: const [0.0, 0.95, 1.0],
+                                ).createShader(bounds);
+                              },
+                              blendMode: BlendMode.dstIn,
+                              child: Text(
+                                category.name,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? categoryColor
+                                      : Theme.of(context).colorScheme.onSurface
+                                            .withOpacity(0.75),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
