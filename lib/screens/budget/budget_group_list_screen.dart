@@ -16,12 +16,14 @@ class BudgetGroupListScreen extends StatefulWidget {
     required this.account,
     required this.category,
     required this.themeProvider,
+    this.isMergedByAccount = false,
   });
 
   final List<Budget> budgets;
   final Account? account;
   final Category? category;
   final ThemeProvider themeProvider;
+  final bool isMergedByAccount;
 
   @override
   State<BudgetGroupListScreen> createState() => _BudgetGroupListScreenState();
@@ -64,13 +66,18 @@ class _BudgetGroupListScreenState extends State<BudgetGroupListScreen> {
         ? IconData(widget.category!.iconCode, fontFamily: 'MaterialIcons')
         : Icons.category;
 
+    // Use account name as title when merged by account, otherwise category name
+    final screenTitle = widget.isMergedByAccount
+        ? (widget.account?.name ?? 'Budgets')
+        : (widget.category?.name ?? 'Budgets');
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context, false),
         ),
-        title: Text(widget.category?.name ?? 'Budgets'),
+        title: Text(screenTitle),
       ),
       body: _budgets.isEmpty
           ? Center(
@@ -93,12 +100,20 @@ class _BudgetGroupListScreenState extends State<BudgetGroupListScreen> {
                 final amountText = _formatAmount(budget.amount);
                 final dateRange =
                     '${_formatDate(budget.startDate)} → ${_formatDate(budget.endDate)}';
-                final comment = budget.comment;
 
-                return FutureBuilder<List<Account>>(
-                  future: DatabaseHelper.instance.getAllAccounts(),
-                  builder: (context, accountSnapshot) {
-                    final accounts = accountSnapshot.data ?? [];
+                return FutureBuilder<List<dynamic>>(
+                  future: Future.wait([
+                    DatabaseHelper.instance.getAllAccounts(),
+                    DatabaseHelper.instance.getAllCategories(),
+                  ]),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox.shrink();
+                    }
+
+                    final accounts = snapshot.data![0] as List<Account>;
+                    final categories = snapshot.data![1] as List<Category>;
+
                     Account? budgetAccount;
                     if (accounts.isNotEmpty) {
                       budgetAccount = accounts.firstWhere(
@@ -109,6 +124,31 @@ class _BudgetGroupListScreenState extends State<BudgetGroupListScreen> {
                     final budgetCurrency = budgetAccount != null
                         ? _currencySymbol(budgetAccount.currency)
                         : '';
+
+                    // Get the actual category for this budget
+                    Category? budgetCategory;
+                    if (widget.isMergedByAccount && categories.isNotEmpty) {
+                      budgetCategory = categories.firstWhere(
+                        (c) => c.id == budget.categoryId,
+                        orElse: () => widget.category ?? categories.first,
+                      );
+                    } else {
+                      budgetCategory = widget.category;
+                    }
+
+                    final displayCategoryColor = budgetCategory != null
+                        ? Color(budgetCategory.color)
+                        : (widget.isMergedByAccount && widget.account != null
+                              ? Color(widget.account!.color)
+                              : categoryColor);
+                    final displayCategoryIcon = budgetCategory != null
+                        ? IconData(
+                            budgetCategory.iconCode,
+                            fontFamily: 'MaterialIcons',
+                          )
+                        : categoryIcon;
+                    final displayCategoryName =
+                        budgetCategory?.name ?? 'Budget';
 
                     return GestureDetector(
                       onTap: () async {
@@ -155,12 +195,20 @@ class _BudgetGroupListScreenState extends State<BudgetGroupListScreen> {
                           children: [
                             CircleAvatar(
                               radius: 18,
-                              backgroundColor: categoryColor,
-                              child: Icon(
-                                categoryIcon,
-                                color: Colors.white,
-                                size: 20,
-                              ),
+                              backgroundColor: widget.isMergedByAccount
+                                  ? displayCategoryColor
+                                  : categoryColor,
+                              child: widget.isMergedByAccount
+                                  ? Icon(
+                                      displayCategoryIcon,
+                                      color: Colors.white,
+                                      size: 20,
+                                    )
+                                  : Icon(
+                                      categoryIcon,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -171,7 +219,10 @@ class _BudgetGroupListScreenState extends State<BudgetGroupListScreen> {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          widget.category?.name ?? 'Budget',
+                                          widget.isMergedByAccount
+                                              ? displayCategoryName
+                                              : (widget.category?.name ??
+                                                    'Budget'),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
@@ -217,22 +268,6 @@ class _BudgetGroupListScreenState extends State<BudgetGroupListScreen> {
                                       ),
                                     ],
                                   ),
-                                  if (comment != null &&
-                                      comment.isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      comment,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
-                                            .withOpacity(0.7),
-                                      ),
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),

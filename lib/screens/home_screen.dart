@@ -42,6 +42,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
   List<dynamic>? _cachedBudgetData;
   List<dynamic>? _cachedExpenseData;
   bool _mergeByCategory = false;
+  bool _mergeByAccount = false;
   bool _showRemaining = false;
   int _refreshCounter = 0;
 
@@ -149,6 +150,31 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     return merged.values.toList();
   }
 
+  List<_RemainingGroup> _mergeRemainingByAccount(
+    List<_RemainingGroup> remainingGroups,
+  ) {
+    final Map<int?, _RemainingGroup> merged = {};
+    for (final group in remainingGroups) {
+      if (merged.containsKey(group.accountId)) {
+        final existing = merged[group.accountId]!;
+        merged[group.accountId] = _RemainingGroup(
+          categoryId: null, // null indicates merged categories
+          accountId: group.accountId,
+          budgetAmount: existing.budgetAmount + group.budgetAmount,
+          spentAmount: existing.spentAmount + group.spentAmount,
+        );
+      } else {
+        merged[group.accountId] = _RemainingGroup(
+          categoryId: null,
+          accountId: group.accountId,
+          budgetAmount: group.budgetAmount,
+          spentAmount: group.spentAmount,
+        );
+      }
+    }
+    return merged.values.toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -180,6 +206,40 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         ),
       );
       grouped[key]!.budgets.add(budget);
+    }
+    return grouped.values.toList();
+  }
+
+  List<_BudgetGroup> _groupBudgetsByAccount(List<Budget> budgets) {
+    final Map<int?, _BudgetGroup> grouped = {};
+    for (final budget in budgets) {
+      final key = budget.accountId;
+      grouped.putIfAbsent(
+        key,
+        () => _BudgetGroup(
+          categoryId: null,
+          accountId: budget.accountId,
+          budgets: [],
+        ),
+      );
+      grouped[key]!.budgets.add(budget);
+    }
+    return grouped.values.toList();
+  }
+
+  List<_ExpenseGroup> _groupExpensesByAccount(List<Expense> expenses) {
+    final Map<int?, _ExpenseGroup> grouped = {};
+    for (final expense in expenses) {
+      final key = expense.accountId;
+      grouped.putIfAbsent(
+        key,
+        () => _ExpenseGroup(
+          categoryId: null,
+          accountId: expense.accountId,
+          expenses: [],
+        ),
+      );
+      grouped[key]!.expenses.add(expense);
     }
     return grouped.values.toList();
   }
@@ -581,19 +641,30 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
 
         filteredBudgets.sort((a, b) => b.amount.compareTo(a.amount));
 
-        final displayBudgets =
-            (_mergeByCategory
-                  ? _groupBudgetsByCategory(filteredBudgets)
-                  : filteredBudgets
-                        .map(
-                          (b) => _BudgetGroup(
-                            categoryId: b.categoryId,
-                            accountId: b.accountId,
-                            budgets: [b],
-                          ),
-                        )
-                        .toList())
-              ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+        final displayBudgets = _mergeByCategory && _mergeByAccount
+            ? filteredBudgets
+                  .map(
+                    (b) => _BudgetGroup(
+                      categoryId: null,
+                      accountId: null,
+                      budgets: [b],
+                    ),
+                  )
+                  .toList()
+            : _mergeByCategory
+            ? _groupBudgetsByCategory(filteredBudgets)
+            : _mergeByAccount
+            ? _groupBudgetsByAccount(filteredBudgets)
+            : filteredBudgets
+                  .map(
+                    (b) => _BudgetGroup(
+                      categoryId: b.categoryId,
+                      accountId: b.accountId,
+                      budgets: [b],
+                    ),
+                  )
+                  .toList();
+        displayBudgets.sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
 
         final totalBudgetAmount = displayBudgets.fold<double>(
           0,
@@ -601,6 +672,9 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         );
 
         final categorySlices = _groupBudgetsByCategory(filteredBudgets)
+          ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+        final accountSlices = _groupBudgetsByAccount(filteredBudgets)
           ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
 
         final percentAllocations = <int>[];
@@ -685,123 +759,248 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         }
 
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 0.0, bottom: 8.0),
-              child: GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  if (details.primaryVelocity! > 0) {
-                    // Swipe right - go to previous period
-                    _updatePeriod(tabName, -1);
-                  } else if (details.primaryVelocity! < 0) {
-                    // Swipe left - go to next period
-                    _updatePeriod(tabName, 1);
-                  }
-                },
-                child: _BudgetPieChart(
-                  total: totalBudgetAmount,
-                  slices: [
-                    for (final g in categorySlices)
-                      _PieSliceData(
-                        value: g.totalAmount,
-                        color: Color(
-                          categoryMap[g.categoryId]?.color ??
-                              Theme.of(context).colorScheme.primary.value,
-                        ),
-                      ),
-                  ],
-                  label:
-                      '$totalCurrencySymbol${_formatAmount(totalBudgetAmount)}',
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 0.0, bottom: 8.0),
+                child: GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity! > 0) {
+                      // Swipe right - go to previous period
+                      _updatePeriod(tabName, -1);
+                    } else if (details.primaryVelocity! < 0) {
+                      // Swipe left - go to next period
+                      _updatePeriod(tabName, 1);
+                    }
+                  },
+                  child: _BudgetPieChart(
+                    total: totalBudgetAmount,
+                    slices: _mergeByAccount
+                        ? [
+                            for (final g in accountSlices)
+                              _PieSliceData(
+                                value: g.totalAmount,
+                                color: Color(
+                                  accountMap[g.accountId]?.color ??
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.primary.value,
+                                ),
+                              ),
+                          ]
+                        : [
+                            for (final g in categorySlices)
+                              _PieSliceData(
+                                value: g.totalAmount,
+                                color: Color(
+                                  categoryMap[g.categoryId]?.color ??
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.primary.value,
+                                ),
+                              ),
+                          ],
+                    label:
+                        '$totalCurrencySymbol${_formatAmount(totalBudgetAmount)}',
+                  ),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    setState(() => _mergeByCategory = !_mergeByCategory);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _mergeByCategory
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.primaryContainer.withOpacity(0.55)
-                          : Theme.of(context).colorScheme.surfaceVariant,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.primary
-                            .withOpacity(_mergeByCategory ? 0.5 : 0.25),
-                        width: 1,
+              padding: const EdgeInsets.only(left: 4),
+              child: Wrap(
+                alignment: WrapAlignment.start,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (!_mergeByAccount && _mergeByCategory) {
+                          _mergeByCategory = false;
+                        }
+                        _mergeByAccount = !_mergeByAccount;
+                      });
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _mergeByAccount
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer.withOpacity(0.55)
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary
+                              .withOpacity(_mergeByAccount ? 0.5 : 0.25),
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Checkbox(
-                          value: _mergeByCategory,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: const VisualDensity(
-                            horizontal: -4,
-                            vertical: -4,
-                          ),
-                          side: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.45),
-                            width: 1.3,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          fillColor: MaterialStateProperty.resolveWith((
-                            states,
-                          ) {
-                            if (states.contains(MaterialState.selected)) {
-                              return Theme.of(context).colorScheme.primary;
-                            }
-                            if (states.contains(MaterialState.pressed) ||
-                                states.contains(MaterialState.hovered)) {
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _mergeByAccount,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.45),
+                              width: 1.3,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            fillColor: MaterialStateProperty.resolveWith((
+                              states,
+                            ) {
+                              if (states.contains(MaterialState.selected)) {
+                                return Theme.of(context).colorScheme.primary;
+                              }
+                              if (states.contains(MaterialState.pressed) ||
+                                  states.contains(MaterialState.hovered)) {
+                                return Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.3);
+                              }
                               return Theme.of(
                                 context,
-                              ).colorScheme.primary.withOpacity(0.3);
-                            }
-                            return Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.12);
-                          }),
-                          checkColor: Theme.of(context).colorScheme.onPrimary,
-                          onChanged: (val) {
-                            setState(() => _mergeByCategory = val ?? false);
-                          },
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Merge accounts',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: _mergeByCategory
-                                ? Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimaryContainer
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withOpacity(0.82),
+                              ).colorScheme.primary.withOpacity(0.12);
+                            }),
+                            checkColor: Theme.of(context).colorScheme.onPrimary,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true && _mergeByCategory) {
+                                  _mergeByCategory = false;
+                                }
+                                _mergeByAccount = val ?? false;
+                              });
+                            },
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            'Merge accounts',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _mergeByAccount
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.82),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (!_mergeByCategory && _mergeByAccount) {
+                          _mergeByAccount = false;
+                        }
+                        _mergeByCategory = !_mergeByCategory;
+                      });
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _mergeByCategory
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer.withOpacity(0.55)
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary
+                              .withOpacity(_mergeByCategory ? 0.5 : 0.25),
+                          width: 1,
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _mergeByCategory,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.45),
+                              width: 1.3,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            fillColor: MaterialStateProperty.resolveWith((
+                              states,
+                            ) {
+                              if (states.contains(MaterialState.selected)) {
+                                return Theme.of(context).colorScheme.primary;
+                              }
+                              if (states.contains(MaterialState.pressed) ||
+                                  states.contains(MaterialState.hovered)) {
+                                return Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.3);
+                              }
+                              return Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.12);
+                            }),
+                            checkColor: Theme.of(context).colorScheme.onPrimary,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true && _mergeByAccount) {
+                                  _mergeByAccount = false;
+                                }
+                                _mergeByCategory = val ?? false;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Merge categories',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _mergeByCategory
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.82),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -822,11 +1021,24 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                       _mergeByCategory && group.budgets.length == 1
                       ? accountMap[group.budgets.first.accountId]
                       : account;
-                  final categoryColor = category != null
-                      ? Color(category.color)
+                  final categoryForDisplay =
+                      _mergeByAccount && group.budgets.length == 1
+                      ? categoryMap[group.budgets.first.categoryId]
+                      : category;
+
+                  // When merging by account, use account color; otherwise use category color
+                  final displayColor =
+                      _mergeByAccount && accountForDisplay != null
+                      ? Color(accountForDisplay.color)
+                      : (categoryForDisplay ?? category) != null
+                      ? Color((categoryForDisplay ?? category)!.color)
                       : Theme.of(context).colorScheme.primary;
-                  final categoryIcon = category != null
-                      ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
+
+                  final categoryIcon = (categoryForDisplay ?? category) != null
+                      ? IconData(
+                          (categoryForDisplay ?? category)!.iconCode,
+                          fontFamily: 'MaterialIcons',
+                        )
                       : Icons.category;
                   final rowCurrencySymbol = accountForDisplay != null
                       ? _currencySymbol(accountForDisplay.currency)
@@ -848,9 +1060,12 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                           MaterialPageRoute(
                             builder: (_) => BudgetGroupListScreen(
                               budgets: group.budgets,
-                              account: account,
-                              category: category,
+                              account: _mergeByAccount
+                                  ? accountForDisplay
+                                  : account,
+                              category: _mergeByAccount ? null : category,
                               themeProvider: widget.themeProvider,
+                              isMergedByAccount: _mergeByAccount,
                             ),
                           ),
                         );
@@ -924,12 +1139,14 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                 child: Center(
                                   child: CircleAvatar(
                                     radius: 18,
-                                    backgroundColor: categoryColor,
-                                    child: Icon(
-                                      categoryIcon,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
+                                    backgroundColor: displayColor,
+                                    child: _mergeByAccount
+                                        ? null // No icon when merging by account
+                                        : Icon(
+                                            categoryIcon,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
                                   ),
                                 ),
                               ),
@@ -945,7 +1162,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                         SizedBox(
                                           width: nameWidth,
                                           child: Text(
-                                            category?.name ?? 'Budget',
+                                            _mergeByAccount
+                                                ? (accountForDisplay?.name ??
+                                                      'Account')
+                                                : (category?.name ?? 'Budget'),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(
@@ -954,36 +1174,40 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                             ),
                                           ),
                                         ),
-                                        SizedBox(
-                                          width: accountWidth,
-                                          child: Text(
-                                            _mergeByCategory &&
-                                                    group.budgets.length > 1
-                                                ? 'Merged'
-                                                : _mergeByCategory &&
-                                                      group.budgets.length == 1
-                                                ? (accountForDisplay?.name ??
-                                                      'Account')
-                                                : account?.name ?? 'Account',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            textAlign: TextAlign.left,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                              color:
-                                                  _mergeByCategory &&
+                                        if (!_mergeByAccount)
+                                          SizedBox(
+                                            width: accountWidth,
+                                            child: Text(
+                                              _mergeByCategory &&
                                                       group.budgets.length > 1
-                                                  ? Theme.of(
-                                                      context,
-                                                    ).colorScheme.secondary
-                                                  : Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurface
-                                                        .withOpacity(0.8),
+                                                  ? 'Merged'
+                                                  : _mergeByCategory &&
+                                                        group.budgets.length ==
+                                                            1
+                                                  ? (accountForDisplay?.name ??
+                                                        'Account')
+                                                  : account?.name ?? 'Account',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.left,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                                color:
+                                                    _mergeByCategory &&
+                                                        group.budgets.length > 1
+                                                    ? Theme.of(
+                                                        context,
+                                                      ).colorScheme.secondary
+                                                    : Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurface
+                                                          .withOpacity(0.8),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                        if (_mergeByAccount)
+                                          SizedBox(width: accountWidth),
                                         SizedBox(width: gapSmall),
                                         SizedBox(
                                           width: percentWidth,
@@ -1124,14 +1348,21 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
               )
             : <Budget>[];
 
-        final groupedExpenses =
-            (_mergeByCategory
-                  ? _groupExpensesByCategory(filteredExpenses)
-                  : _groupExpenses(filteredExpenses))
-              ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+        final groupedExpenses = _mergeByCategory && _mergeByAccount
+            ? _groupExpenses(filteredExpenses)
+            : _mergeByCategory
+            ? _groupExpensesByCategory(filteredExpenses)
+            : _mergeByAccount
+            ? _groupExpensesByAccount(filteredExpenses)
+            : _groupExpenses(filteredExpenses);
+        groupedExpenses.sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
 
         final categorySlices = _groupExpensesByCategory(filteredExpenses)
           ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+        final accountSlices = _groupExpensesByAccount(filteredExpenses)
+          ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
         final totalExpenseAmount = groupedExpenses.fold<double>(
           0,
           (sum, group) => sum + group.totalAmount,
@@ -1144,8 +1375,12 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                   filteredBudgets,
                   filteredExpenses,
                 );
-                final processedGroups = _mergeByCategory
+                final processedGroups = _mergeByCategory && _mergeByAccount
+                    ? groups
+                    : _mergeByCategory
                     ? _mergeRemainingByCategory(groups)
+                    : _mergeByAccount
+                    ? _mergeRemainingByAccount(groups)
                     : groups;
                 return processedGroups
                   ..sort((a, b) => b.remaining.compareTo(a.remaining));
@@ -1242,27 +1477,54 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         }
 
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 0.0, bottom: 6.0),
-              child: GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  if (details.primaryVelocity! > 0) {
-                    // Swipe right - go to previous period
-                    _updatePeriod(selectedTab, -1);
-                  } else if (details.primaryVelocity! < 0) {
-                    // Swipe left - go to next period
-                    _updatePeriod(selectedTab, 1);
-                  }
-                },
-                child: _BudgetPieChart(
-                  total: _showRemaining ? totalRemaining : totalExpenseAmount,
-                  slices: _showRemaining
-                      ? [
-                          for (final g in remainingGroups)
-                            if (g.remaining > 0)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 0.0, bottom: 6.0),
+                child: GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity! > 0) {
+                      // Swipe right - go to previous period
+                      _updatePeriod(selectedTab, -1);
+                    } else if (details.primaryVelocity! < 0) {
+                      // Swipe left - go to next period
+                      _updatePeriod(selectedTab, 1);
+                    }
+                  },
+                  child: _BudgetPieChart(
+                    total: _showRemaining ? totalRemaining : totalExpenseAmount,
+                    slices: _showRemaining
+                        ? [
+                            for (final g in remainingGroups)
+                              if (g.remaining > 0)
+                                _PieSliceData(
+                                  value: g.remaining,
+                                  color: Color(
+                                    categoryMap[g.categoryId]?.color ??
+                                        Theme.of(
+                                          context,
+                                        ).colorScheme.primary.value,
+                                  ),
+                                ),
+                          ]
+                        : _mergeByAccount
+                        ? [
+                            for (final g in accountSlices)
                               _PieSliceData(
-                                value: g.remaining,
+                                value: g.totalAmount,
+                                color: Color(
+                                  accountMap[g.accountId]?.color ??
+                                      Theme.of(
+                                        context,
+                                      ).colorScheme.primary.value,
+                                ),
+                              ),
+                          ]
+                        : [
+                            for (final g in categorySlices)
+                              _PieSliceData(
+                                value: g.totalAmount,
                                 color: Color(
                                   categoryMap[g.categoryId]?.color ??
                                       Theme.of(
@@ -1270,206 +1532,294 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                       ).colorScheme.primary.value,
                                 ),
                               ),
-                        ]
-                      : [
-                          for (final g in categorySlices)
-                            _PieSliceData(
-                              value: g.totalAmount,
-                              color: Color(
-                                categoryMap[g.categoryId]?.color ??
-                                    Theme.of(context).colorScheme.primary.value,
-                              ),
-                            ),
-                        ],
-                  label: _showRemaining
-                      ? '$totalCurrencySymbol${_formatAmount(totalRemaining)}'
-                      : '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
-                  labelColor: _showRemaining && totalRemaining < 0
-                      ? Theme.of(context).colorScheme.error
-                      : null,
+                          ],
+                    label: _showRemaining
+                        ? '$totalCurrencySymbol${_formatAmount(totalRemaining)}'
+                        : '$totalCurrencySymbol${_formatAmount(totalExpenseAmount)}',
+                    labelColor: _showRemaining && totalRemaining < 0
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        setState(() => _mergeByCategory = !_mergeByCategory);
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: _mergeByCategory
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primaryContainer.withOpacity(0.55)
-                              : Theme.of(context).colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.primary
-                                .withOpacity(_mergeByCategory ? 0.5 : 0.25),
-                            width: 1,
-                          ),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Checkbox(
-                              value: _mergeByCategory,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: const VisualDensity(
-                                horizontal: -4,
-                                vertical: -4,
-                              ),
-                              side: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.45),
-                                width: 1.3,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              fillColor: MaterialStateProperty.resolveWith((
-                                states,
-                              ) {
-                                if (states.contains(MaterialState.selected)) {
-                                  return Theme.of(context).colorScheme.primary;
-                                }
-                                if (states.contains(MaterialState.pressed) ||
-                                    states.contains(MaterialState.hovered)) {
-                                  return Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withOpacity(0.3);
-                                }
-                                return Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.12);
-                              }),
-                              checkColor: Theme.of(
+              padding: const EdgeInsets.only(left: 4),
+              child: Wrap(
+                alignment: WrapAlignment.start,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (!_mergeByAccount && _mergeByCategory) {
+                          _mergeByCategory = false;
+                        }
+                        _mergeByAccount = !_mergeByAccount;
+                      });
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _mergeByAccount
+                            ? Theme.of(
                                 context,
-                              ).colorScheme.onPrimary,
-                              onChanged: (val) {
-                                setState(() => _mergeByCategory = val ?? false);
-                              },
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Merge accounts',
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: _mergeByCategory
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer
-                                    : Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withOpacity(0.82),
-                              ),
-                            ),
-                          ],
+                              ).colorScheme.primaryContainer.withOpacity(0.55)
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary
+                              .withOpacity(_mergeByAccount ? 0.5 : 0.25),
+                          width: 1,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        setState(() => _showRemaining = !_showRemaining);
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: _showRemaining
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primaryContainer.withOpacity(0.55)
-                              : Theme.of(context).colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.primary
-                                .withOpacity(_showRemaining ? 0.5 : 0.25),
-                            width: 1,
-                          ),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Checkbox(
-                              value: _showRemaining,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: const VisualDensity(
-                                horizontal: -4,
-                                vertical: -4,
-                              ),
-                              side: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withOpacity(0.45),
-                                width: 1.3,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              fillColor: MaterialStateProperty.resolveWith((
-                                states,
-                              ) {
-                                if (states.contains(MaterialState.selected)) {
-                                  return Theme.of(context).colorScheme.primary;
-                                }
-                                if (states.contains(MaterialState.pressed) ||
-                                    states.contains(MaterialState.hovered)) {
-                                  return Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withOpacity(0.3);
-                                }
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _mergeByAccount,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.45),
+                              width: 1.3,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            fillColor: MaterialStateProperty.resolveWith((
+                              states,
+                            ) {
+                              if (states.contains(MaterialState.selected)) {
+                                return Theme.of(context).colorScheme.primary;
+                              }
+                              if (states.contains(MaterialState.pressed) ||
+                                  states.contains(MaterialState.hovered)) {
                                 return Theme.of(
                                   context,
-                                ).colorScheme.primary.withOpacity(0.12);
-                              }),
-                              checkColor: Theme.of(
+                                ).colorScheme.primary.withOpacity(0.3);
+                              }
+                              return Theme.of(
                                 context,
-                              ).colorScheme.onPrimary,
-                              onChanged: (val) {
-                                setState(() => _showRemaining = val ?? false);
-                              },
+                              ).colorScheme.primary.withOpacity(0.12);
+                            }),
+                            checkColor: Theme.of(context).colorScheme.onPrimary,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true && _mergeByCategory) {
+                                  _mergeByCategory = false;
+                                }
+                                _mergeByAccount = val ?? false;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Merge accounts',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _mergeByAccount
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.82),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Remaining',
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: _showRemaining
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer
-                                    : Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withOpacity(0.82),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (!_mergeByCategory && _mergeByAccount) {
+                          _mergeByAccount = false;
+                        }
+                        _mergeByCategory = !_mergeByCategory;
+                      });
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _mergeByCategory
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer.withOpacity(0.55)
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary
+                              .withOpacity(_mergeByCategory ? 0.5 : 0.25),
+                          width: 1,
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _mergeByCategory,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.45),
+                              width: 1.3,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            fillColor: MaterialStateProperty.resolveWith((
+                              states,
+                            ) {
+                              if (states.contains(MaterialState.selected)) {
+                                return Theme.of(context).colorScheme.primary;
+                              }
+                              if (states.contains(MaterialState.pressed) ||
+                                  states.contains(MaterialState.hovered)) {
+                                return Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.3);
+                              }
+                              return Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.12);
+                            }),
+                            checkColor: Theme.of(context).colorScheme.onPrimary,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true && _mergeByAccount) {
+                                  _mergeByAccount = false;
+                                }
+                                _mergeByCategory = val ?? false;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Merge categories',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _mergeByCategory
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.82),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() => _showRemaining = !_showRemaining);
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _showRemaining
+                            ? Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer.withOpacity(0.55)
+                            : Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary
+                              .withOpacity(_showRemaining ? 0.5 : 0.25),
+                          width: 1,
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _showRemaining,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: const VisualDensity(
+                              horizontal: -4,
+                              vertical: -4,
+                            ),
+                            side: BorderSide(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.45),
+                              width: 1.3,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            fillColor: MaterialStateProperty.resolveWith((
+                              states,
+                            ) {
+                              if (states.contains(MaterialState.selected)) {
+                                return Theme.of(context).colorScheme.primary;
+                              }
+                              if (states.contains(MaterialState.pressed) ||
+                                  states.contains(MaterialState.hovered)) {
+                                return Theme.of(
+                                  context,
+                                ).colorScheme.primary.withOpacity(0.3);
+                              }
+                              return Theme.of(
+                                context,
+                              ).colorScheme.primary.withOpacity(0.12);
+                            }),
+                            checkColor: Theme.of(context).colorScheme.onPrimary,
+                            onChanged: (val) {
+                              setState(() => _showRemaining = val ?? false);
+                            },
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Remaining',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _showRemaining
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.82),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -1480,6 +1830,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                       accountMap,
                       totalCurrencySymbol,
                       theme,
+                      _mergeByAccount,
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.only(
@@ -1498,12 +1849,23 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                             _mergeByCategory && group.expenses.length == 1
                             ? accountMap[group.expenses.first.accountId]
                             : account;
-                        final categoryColor = category != null
-                            ? Color(category.color)
+                        final categoryForDisplay =
+                            _mergeByAccount && group.expenses.length == 1
+                            ? categoryMap[group.expenses.first.categoryId]
+                            : category;
+
+                        // When merging by account, use account color; otherwise use category color
+                        final displayColor =
+                            _mergeByAccount && accountForDisplay != null
+                            ? Color(accountForDisplay.color)
+                            : (categoryForDisplay ?? category) != null
+                            ? Color((categoryForDisplay ?? category)!.color)
                             : Theme.of(context).colorScheme.primary;
-                        final categoryIcon = category != null
+
+                        final categoryIcon =
+                            (categoryForDisplay ?? category) != null
                             ? IconData(
-                                category.iconCode,
+                                (categoryForDisplay ?? category)!.iconCode,
                                 fontFamily: 'MaterialIcons',
                               )
                             : Icons.category;
@@ -1520,12 +1882,15 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                               MaterialPageRoute(
                                 builder: (_) => ExpenseGroupListScreen(
                                   expenses: group.expenses,
-                                  account: account,
-                                  category: category,
+                                  account: _mergeByAccount
+                                      ? accountForDisplay
+                                      : account,
+                                  category: _mergeByAccount ? null : category,
                                   themeProvider: widget.themeProvider,
                                   selectedTab: selectedTab,
                                   periodDate: periodDate,
                                   periodRange: periodRange,
+                                  isMergedByAccount: _mergeByAccount,
                                 ),
                               ),
                             );
@@ -1583,12 +1948,14 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                       child: Center(
                                         child: CircleAvatar(
                                           radius: 18,
-                                          backgroundColor: categoryColor,
-                                          child: Icon(
-                                            categoryIcon,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
+                                          backgroundColor: displayColor,
+                                          child: _mergeByAccount
+                                              ? null // No icon when merging by account
+                                              : Icon(
+                                                  categoryIcon,
+                                                  color: Colors.white,
+                                                  size: 20,
+                                                ),
                                         ),
                                       ),
                                     ),
@@ -1605,7 +1972,12 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                               SizedBox(
                                                 width: nameWidth,
                                                 child: Text(
-                                                  category?.name ?? 'Expense',
+                                                  _mergeByAccount
+                                                      ? (accountForDisplay
+                                                                ?.name ??
+                                                            'Account')
+                                                      : (category?.name ??
+                                                            'Expense'),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -1615,58 +1987,66 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                                   ),
                                                 ),
                                               ),
-                                              SizedBox(
-                                                width: accountWidth,
-                                                child: Builder(
-                                                  builder: (context) {
-                                                    // Check if expenses come from different accounts
-                                                    final hasMultipleAccounts =
-                                                        _mergeByCategory &&
-                                                        group
-                                                            .expenses
-                                                            .isNotEmpty &&
-                                                        group.expenses
-                                                                .map(
-                                                                  (e) => e
-                                                                      .accountId,
-                                                                )
-                                                                .toSet()
-                                                                .length >
-                                                            1;
+                                              if (!_mergeByAccount)
+                                                SizedBox(
+                                                  width: accountWidth,
+                                                  child: Builder(
+                                                    builder: (context) {
+                                                      // Check if expenses come from different accounts
+                                                      final hasMultipleAccounts =
+                                                          _mergeByCategory &&
+                                                          group
+                                                              .expenses
+                                                              .isNotEmpty &&
+                                                          group.expenses
+                                                                  .map(
+                                                                    (e) => e
+                                                                        .accountId,
+                                                                  )
+                                                                  .toSet()
+                                                                  .length >
+                                                              1;
 
-                                                    final displayText =
-                                                        hasMultipleAccounts
-                                                        ? 'Merged'
-                                                        : (accountForDisplay
-                                                                  ?.name ??
-                                                              'Account');
+                                                      final displayText =
+                                                          hasMultipleAccounts
+                                                          ? 'Merged'
+                                                          : (accountForDisplay
+                                                                    ?.name ??
+                                                                'Account');
 
-                                                    return Text(
-                                                      displayText,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      textAlign: TextAlign.left,
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        fontSize: 13,
-                                                        color:
-                                                            hasMultipleAccounts
-                                                            ? Theme.of(context)
-                                                                  .colorScheme
-                                                                  .secondary
-                                                            : Theme.of(context)
-                                                                  .colorScheme
-                                                                  .onSurface
-                                                                  .withOpacity(
-                                                                    0.8,
-                                                                  ),
-                                                      ),
-                                                    );
-                                                  },
+                                                      return Text(
+                                                        displayText,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        textAlign:
+                                                            TextAlign.left,
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 13,
+                                                          color:
+                                                              hasMultipleAccounts
+                                                              ? Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .secondary
+                                                              : Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .onSurface
+                                                                    .withOpacity(
+                                                                      0.8,
+                                                                    ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
                                                 ),
-                                              ),
+                                              if (_mergeByAccount)
+                                                SizedBox(width: accountWidth),
                                               SizedBox(width: gapSmall),
                                               SizedBox(
                                                 width: percentWidth,
@@ -1758,6 +2138,7 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
     Map<int?, Account> accountMap,
     String totalCurrencySymbol,
     ThemeData theme,
+    bool mergeByAccount,
   ) {
     if (remainingGroups.isEmpty) {
       return Center(
@@ -1776,9 +2157,14 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
         final remaining = remainingGroups[index];
         final category = categoryMap[remaining.categoryId];
         final account = accountMap[remaining.accountId];
-        final categoryColor = category != null
+
+        // When merging by account, use account color; otherwise use category color
+        final displayColor = mergeByAccount && account != null
+            ? Color(account.color)
+            : category != null
             ? Color(category.color)
             : Theme.of(context).colorScheme.primary;
+
         final categoryIcon = category != null
             ? IconData(category.iconCode, fontFamily: 'MaterialIcons')
             : Icons.category;
@@ -1825,12 +2211,10 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                     child: Center(
                       child: CircleAvatar(
                         radius: 18,
-                        backgroundColor: categoryColor,
-                        child: Icon(
-                          categoryIcon,
-                          color: Colors.white,
-                          size: 20,
-                        ),
+                        backgroundColor: displayColor,
+                        child: mergeByAccount
+                            ? null // No icon when merging by account
+                            : Icon(categoryIcon, color: Colors.white, size: 20),
                       ),
                     ),
                   ),
@@ -1846,7 +2230,9 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                category?.name ?? 'Category',
+                                mergeByAccount
+                                    ? (account?.name ?? 'Account')
+                                    : (category?.name ?? 'Category'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -1854,7 +2240,8 @@ class _MyHomePageState extends State<MyHomePage> with TickerProviderStateMixin {
                                   fontSize: 14,
                                 ),
                               ),
-                              if (remaining.accountId != null) ...[
+                              if (!mergeByAccount &&
+                                  remaining.accountId != null) ...[
                                 const SizedBox(height: 2),
                                 Text(
                                   account?.name ?? 'Account',

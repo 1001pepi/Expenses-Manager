@@ -20,6 +20,7 @@ class ExpenseGroupListScreen extends StatefulWidget {
     required this.selectedTab,
     required this.periodDate,
     required this.periodRange,
+    this.isMergedByAccount = false,
   });
 
   final List<Expense> expenses;
@@ -29,6 +30,7 @@ class ExpenseGroupListScreen extends StatefulWidget {
   final String selectedTab;
   final DateTime periodDate;
   final DateTimeRange? periodRange;
+  final bool isMergedByAccount;
 
   @override
   State<ExpenseGroupListScreen> createState() => _ExpenseGroupListScreenState();
@@ -113,6 +115,11 @@ class _ExpenseGroupListScreenState extends State<ExpenseGroupListScreen> {
         ? IconData(widget.category!.iconCode, fontFamily: 'MaterialIcons')
         : Icons.category;
 
+    // Use account name as title when merged by account, otherwise category name
+    final screenTitle = widget.isMergedByAccount
+        ? (widget.account?.name ?? 'Expenses')
+        : (widget.category?.name ?? 'Expenses');
+
     final groupedExpenses = _groupExpensesByDate();
     final sortedDates = groupedExpenses.keys.toList()
       ..sort((a, b) => _sortAscending ? a.compareTo(b) : b.compareTo(a));
@@ -123,7 +130,7 @@ class _ExpenseGroupListScreenState extends State<ExpenseGroupListScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context, _hasChanges),
         ),
-        title: Text(widget.category?.name ?? 'Expenses'),
+        title: Text(screenTitle),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -199,10 +206,20 @@ class _ExpenseGroupListScreenState extends State<ExpenseGroupListScreen> {
                     ...expensesForDate.map((expense) {
                       final amountText = _formatAmount(expense.amount);
 
-                      return FutureBuilder<List<Account>>(
-                        future: DatabaseHelper.instance.getAllAccounts(),
-                        builder: (context, accountSnapshot) {
-                          final accounts = accountSnapshot.data ?? [];
+                      return FutureBuilder<List<dynamic>>(
+                        future: Future.wait([
+                          DatabaseHelper.instance.getAllAccounts(),
+                          DatabaseHelper.instance.getAllCategories(),
+                        ]),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const SizedBox.shrink();
+                          }
+
+                          final accounts = snapshot.data![0] as List<Account>;
+                          final categories =
+                              snapshot.data![1] as List<Category>;
+
                           Account? expenseAccount;
                           if (accounts.isNotEmpty) {
                             expenseAccount = accounts.firstWhere(
@@ -213,6 +230,33 @@ class _ExpenseGroupListScreenState extends State<ExpenseGroupListScreen> {
                           final expenseCurrency = expenseAccount != null
                               ? _currencySymbol(expenseAccount.currency)
                               : '';
+
+                          // Get the actual category for this expense
+                          Category? expenseCategory;
+                          if (widget.isMergedByAccount &&
+                              categories.isNotEmpty) {
+                            expenseCategory = categories.firstWhere(
+                              (c) => c.id == expense.categoryId,
+                              orElse: () => widget.category ?? categories.first,
+                            );
+                          } else {
+                            expenseCategory = widget.category;
+                          }
+
+                          final displayCategoryColor = expenseCategory != null
+                              ? Color(expenseCategory.color)
+                              : (widget.isMergedByAccount &&
+                                        widget.account != null
+                                    ? Color(widget.account!.color)
+                                    : categoryColor);
+                          final displayCategoryIcon = expenseCategory != null
+                              ? IconData(
+                                  expenseCategory.iconCode,
+                                  fontFamily: 'MaterialIcons',
+                                )
+                              : categoryIcon;
+                          final displayCategoryName =
+                              expenseCategory?.name ?? 'Expense';
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
@@ -279,12 +323,20 @@ class _ExpenseGroupListScreenState extends State<ExpenseGroupListScreen> {
                                   children: [
                                     CircleAvatar(
                                       radius: 18,
-                                      backgroundColor: categoryColor,
-                                      child: Icon(
-                                        categoryIcon,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
+                                      backgroundColor: widget.isMergedByAccount
+                                          ? displayCategoryColor
+                                          : categoryColor,
+                                      child: widget.isMergedByAccount
+                                          ? Icon(
+                                              displayCategoryIcon,
+                                              color: Colors.white,
+                                              size: 20,
+                                            )
+                                          : Icon(
+                                              categoryIcon,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -296,8 +348,12 @@ class _ExpenseGroupListScreenState extends State<ExpenseGroupListScreen> {
                                             children: [
                                               Expanded(
                                                 child: Text(
-                                                  widget.category?.name ??
-                                                      'Expense',
+                                                  widget.isMergedByAccount
+                                                      ? displayCategoryName
+                                                      : (widget
+                                                                .category
+                                                                ?.name ??
+                                                            'Expense'),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
